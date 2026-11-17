@@ -27,3 +27,7 @@ _Avoid_: Locality, provider, deployment target
 **Model policy**:
 The furthest model location one project memory may send its content to. The default is on-device only.
 _Avoid_: Model-use policy, privacy mode
+
+**Project memory bundle**:
+One project memory packed as a single signed file that another consultant can import, holding its sources, chunks, vectors, model policy and provenance.
+_Avoid_: Export, capsule, snapshot

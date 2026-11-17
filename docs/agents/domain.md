@@ -49,3 +49,36 @@ If the concept you need isn't in the glossary yet, that's a signal: either you'r
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
 > _Contradicts ADR-0007 (event-sourced orders), but worth reopening because…_
+
+## Record every owner decision as an ADR
+
+This repo records more ADRs than the domain-modeling skill's default. Write one for every decision the owner makes final, whether or not it passes the three-criteria test. A research finding becomes an ADR only once the owner adopts it, usually in a grilling ticket.
+
+Write the ADR in the same session the decision is made, before closing the ticket. Link the ADR from the ticket's resolution comment, and link the ticket from the ADR.
+
+Numbering: scan `docs/adr/` for the highest number and add one: `0001-slug.md`, `0002-slug.md`.
+
+Template:
+
+```md
+---
+status: accepted
+date: YYYY-MM-DD
+decided-by: <owner's GitHub login>
+ticket: <issue URL>
+---
+
+# <Decision as a short statement>
+
+<1 to 3 sentences: the context, what was decided, and why.>
+
+## Considered options
+
+<Only when real alternatives existed: each one and why it lost.>
+
+## Consequences
+
+<Only when a downstream effect is not obvious.>
+```
+
+Status is one of `proposed`, `accepted`, `deprecated` or `superseded by ADR-NNNN`. To change a decision, write a new ADR and set the old one's status to `superseded by ADR-NNNN`. Edit an accepted ADR's text only to fix typos or links.
