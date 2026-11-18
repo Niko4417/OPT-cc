@@ -13,12 +13,36 @@ The searchable knowledge of exactly one modernization project, answering questio
 _Avoid_: Projektgedächtnis, RAG system, knowledge store
 
 **Decision record**:
-A dated record of one decision made in a modernization project, with its status and the decision that supersedes it, if any.
+A dated record of one decision made in a modernization project, with its decision status and the decision record that supersedes it, if any. ADRs, RFCs with a status and decisions made in workshops are all decision records.
 _Avoid_: ADR (when meaning meeting decisions too), decision log entry
+
+**Decision status**:
+Where a decision record stands: proposed, accepted, rejected, deprecated or superseded. A status the project memory can't map to one of these is unknown.
+_Avoid_: State, phase
+
+**Decision log**:
+A client document that lists many decisions in one file, such as a Word table or an Excel sheet. Its entries become decision records only after a human confirms them.
+_Avoid_: Decision register
+
+**Decision register**:
+The list of every decision record in one project memory, with its decision status, date, source, supersession chain and open decision conflicts.
+_Avoid_: Decision log, ADR index
+
+**Decision conflict**:
+Two or more decision records whose relationship the project memory can't settle by itself: a newer record that contradicts an older one without saying it supersedes it, a supersession that runs against creation order, a cycle, or two records that supersede the same one. Only a human resolves it.
+_Avoid_: Contradiction, inconsistency
+
+**Ruling**:
+A human's resolution of one decision conflict, kept in the project memory. It holds until one of the records it covers changes.
+_Avoid_: Override, verdict
 
 **Workshop result**:
 A text record of a workshop in a modernization project, such as minutes or a transcript.
 _Avoid_: Workshop output, meeting notes
+
+**Project artifact**:
+Anything a consultant adds to a project memory by hand, beyond the repositories it is connected to, such as a decision log, slides, a spreadsheet, an interview recording or a recorded workshop. The term says how a source arrived, not what it says, so a decision record or workshop result can be a project artifact or repository content.
+_Avoid_: Artifact (alone), evidence, attachment, additional document
 
 **Model location**:
 Where a language, embedding or reranking model runs: on-device (the consultant's own machine), client-hosted (inside the client's network) or third-party cloud.
