@@ -40,6 +40,10 @@ _Avoid_: Override, verdict
 A text record of a workshop in a modernization project, such as minutes or a transcript.
 _Avoid_: Workshop output, meeting notes
 
+**Domain knowledge**:
+What the client's business does and how, as a modernization project writes it down: business rules, processes, domain terms and functional specifications.
+_Avoid_: Fachlichkeit, business logic, subject matter
+
 **Project artifact**:
 Anything a consultant adds to a project memory by hand, beyond the repositories it is connected to, such as a decision log, slides, a spreadsheet, an interview recording, a recorded workshop or a note typed into the app. The term says how a source arrived, not what it says, so a decision record or workshop result can be a project artifact or repository content.
 _Avoid_: Artifact (alone), evidence, attachment, additional document
