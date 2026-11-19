@@ -361,4 +361,4 @@ MCP, existing servers and file watching:
 - M31: https://github.com/agentskills/agentskills/blob/83021e2be4/docs/snippets/clients.jsx
 - M32: https://agents.md/
 
-Keiko (local checkout `/Users/niko/code/Keiko` at `b5fe2a84f`, GitHub `dev` at `8701b820ff`): `packages/keiko-mcp/src/relay-endpoint.ts`, `packages/keiko-server/src/coding-sidecar-mcp-relay.ts`, `docs/adr/ADR-0181-shared-managed-mcp-host.md`.
+Keiko (a local checkout at `b5fe2a84f`, GitHub `dev` at `8701b820ff`): `packages/keiko-mcp/src/relay-endpoint.ts`, `packages/keiko-server/src/coding-sidecar-mcp-relay.ts`, `docs/adr/ADR-0181-shared-managed-mcp-host.md`.
