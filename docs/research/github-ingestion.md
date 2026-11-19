@@ -39,7 +39,7 @@ I read the connector and chunker source code at these commits (shallow clones on
 | chonkie-inc/chonkie | `664454b6` | 2026-08-26 |
 | deepset-ai/haystack-core-integrations | `4d227e02` | 2026-11-17 |
 | sourcebot-dev/sourcebot | `2914eb23` | 2026-11-10 |
-| Keiko (local, `/Users/niko/code/Keiko`) | `b5fe2a84` | 2026-11-15 |
+| Keiko (a local checkout) | `b5fe2a84` | 2026-11-15 |
 
 Links to source files use `blob/<commit>` so the cited lines stay stable.
 
@@ -102,7 +102,7 @@ Links to source files use `blob/<commit>` so the cited lines stay stable.
 
 ### Keiko
 
-Keiko is Apache-2.0 (`/Users/niko/code/Keiko/LICENSE`).
+Keiko is Apache-2.0 ([LICENSE](https://github.com/oscharko-dev/Keiko/blob/dev/LICENSE)).
 
 - The repository Knowledge Pod indexes a real working tree, not the GitHub API (`packages/keiko-local-knowledge/src/repository-pod.ts` L1-6).
 - The code parser "owns no syntax tree". It finds symbol boundaries with regular expressions and uses the symbol name as the section path (`packages/keiko-local-knowledge/src/parsers/code-parser.ts` L1-7). It maps 24 extensions to 13 languages: C, C++, C#, Go, Java, JavaScript, Kotlin, PHP, Python, Ruby, Rust, Swift and TypeScript (L38-63).
