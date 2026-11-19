@@ -23,7 +23,7 @@ Proposal:
 
 ### Keiko Knowledge Pods and Knowledge Pod Sets
 
-Keiko paths below are relative to `/Users/niko/code/Keiko` at commit `b5fe2a84f`.
+Keiko paths below are relative to the root of a Keiko checkout at commit `b5fe2a84f`.
 
 **Storage.** A Knowledge Pod is the user-facing name for a "capsule". All pods of one namespace live in one SQLite file, `<runtime-state>/local-knowledge/<namespace>/capsules.db` (`docs/local-knowledge/knowledge-pods.md`, table "Product term"; `packages/keiko-local-knowledge/src/store-paths.ts`). The on-disk schema is at version 33 (`packages/keiko-contracts/src/local-knowledge-schema.ts`, `LOCAL_KNOWLEDGE_DB_SCHEMA_VERSION`). The tables that matter for a bundle:
 
@@ -217,7 +217,7 @@ acme-billing-2026-11-17/
 
 ## Sources
 
-Keiko, local checkout `/Users/niko/code/Keiko` at `b5fe2a84f`:
+Keiko, a local checkout at `b5fe2a84f`:
 
 - `docs/local-knowledge/knowledge-pods.md`
 - `docs/local-knowledge/embedding-space-governance-ledger.md`
