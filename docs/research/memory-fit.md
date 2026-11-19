@@ -173,5 +173,5 @@ In order of size of change:
 - Apple: [MTLDevice.recommendedMaxWorkingSetSize](https://developer.apple.com/documentation/metal/mtldevice/recommendedmaxworkingsetsize).
 - Model cards: [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B), [Qwen3-Embedding-4B](https://huggingface.co/Qwen/Qwen3-Embedding-4B), [Qwen3-Reranker-0.6B](https://huggingface.co/Qwen/Qwen3-Reranker-0.6B), [bge-m3](https://huggingface.co/BAAI/bge-m3), [bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3), [multilingual-e5-large-instruct](https://huggingface.co/intfloat/multilingual-e5-large-instruct).
 - MTEB per-task results: [embeddings-benchmark/results](https://github.com/embeddings-benchmark/results).
-- Keiko's lab, local checkout: `/Users/niko/code/Keiko/scripts/testing/review-quality/lab/README.md` and `lab.sh`.
+- Keiko's lab, in a local checkout: `scripts/testing/review-quality/lab/README.md` and `lab.sh`.
 - Measurements on the M5 Pro with 64 GB, 2026-11-17: `sysctl hw.memsize hw.model iogpu.wired_limit_mb` and `MTLCreateSystemDefaultDevice().recommendedMaxWorkingSetSize`.
