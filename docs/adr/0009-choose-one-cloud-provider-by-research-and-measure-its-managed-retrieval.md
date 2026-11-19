@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0012
 date: 2026-11-19
 decided-by: Niko4417
 ticket: https://github.com/Niko4417/OPT-cc/issues/1

@@ -49,7 +49,7 @@ Where a language, embedding or reranking model runs: on-device (the consultant's
 _Avoid_: Locality, provider, deployment target
 
 **Model policy**:
-The furthest model location one project memory may send its content to. The default is on-device only.
+The furthest model location one project memory may send its content to.
 _Avoid_: Model-use policy, privacy mode
 
 **Project memory bundle**:
