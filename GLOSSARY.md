@@ -1,6 +1,6 @@
 # Project memory
 
-A local-first system that lets consultants ask natural-language questions about everything a modernization project has produced: code, documentation, workshop results and decision records.
+A system that lets consultants ask natural-language questions about everything a modernization project has produced: code, documentation, workshop results and decision records.
 
 ## Language
 
@@ -41,11 +41,11 @@ A text record of a workshop in a modernization project, such as minutes or a tra
 _Avoid_: Workshop output, meeting notes
 
 **Project artifact**:
-Anything a consultant adds to a project memory by hand, beyond the repositories it is connected to, such as a decision log, slides, a spreadsheet, an interview recording or a recorded workshop. The term says how a source arrived, not what it says, so a decision record or workshop result can be a project artifact or repository content.
+Anything a consultant adds to a project memory by hand, beyond the repositories it is connected to, such as a decision log, slides, a spreadsheet, an interview recording, a recorded workshop or a note typed into the app. The term says how a source arrived, not what it says, so a decision record or workshop result can be a project artifact or repository content.
 _Avoid_: Artifact (alone), evidence, attachment, additional document
 
 **Model location**:
-Where a language, embedding or reranking model runs: on-device (the consultant's own machine), client-hosted (inside the client's network) or third-party cloud.
+Where a language, embedding or reranking model runs: on-device (the consultant's own machine), client-hosted (inside the client's network) or third-party cloud. A cloud tenant owned by the client counts as client-hosted, and one owned by the consultancy counts as third-party cloud.
 _Avoid_: Locality, provider, deployment target
 
 **Model policy**:
