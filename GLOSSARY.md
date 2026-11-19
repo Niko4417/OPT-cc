@@ -53,5 +53,9 @@ The furthest model location one project memory may send its content to.
 _Avoid_: Model-use policy, privacy mode
 
 **Project memory bundle**:
-One project memory packed as a single signed file that another consultant can import, holding its sources, chunks, vectors, model policy and provenance.
+One project memory packed as a single signed and encrypted file that another consultant can import into their installation, holding its sources, its human-made text with history, chunks, vectors, model policy and provenance.
 _Avoid_: Export, capsule, snapshot
+
+**Installation**:
+One running copy of the app with its own storage and its own key, used by one consultant.
+_Avoid_: Instance, environment, deployment
