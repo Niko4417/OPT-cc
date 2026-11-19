@@ -121,7 +121,7 @@ Ollama stays a fallback for the chat models if `mlx_lm.server` turns out too fra
 
 ## Sources
 
-Keiko (local checkout `/Users/niko/code/Keiko`):
+Keiko (a local checkout):
 
 - K1: `scripts/testing/review-quality/lab/README.md`
 - K2: `scripts/testing/review-quality/lab/lab.sh` (lines 28 to 97 and 188 to 226)
