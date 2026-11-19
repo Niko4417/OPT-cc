@@ -56,6 +56,8 @@ This repo records more ADRs than the domain-modeling skill's default. Write one 
 
 Write the ADR in the same session the decision is made, before closing the ticket. Link the ADR from the ticket's resolution comment, and link the ticket from the ADR.
 
+ADRs reach `main` only through a pull request. Never push them to `main` directly, even when the push would be allowed. Commit the ADRs on a branch, open a pull request, and link the pull request from the ticket's resolution comment next to the ADR paths on `main`. Those paths resolve once the pull request merges. Close the ticket after the pull request is open. Merging is the owner's call.
+
 Numbering: scan `docs/adr/` for the highest number and add one: `0001-slug.md`, `0002-slug.md`.
 
 Template:
