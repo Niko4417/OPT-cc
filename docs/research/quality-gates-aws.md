@@ -292,3 +292,74 @@ Projects that pay for no model calls on pull requests: stanfordnlp/dspy runs its
 | promptfoo, CI/CD integration [74] | Path-filtered pull request runs; quality gates "Fail the build when quality thresholds aren't met"; a daily cron in the red-team example |
 
 **No consensus.** Tool vendors and AI labs say to evaluate on every change [70, 71, 73]. Only Braintrust names a way to keep that cheap. The ten-minute figure comes from XP, Fowler and DORA, written for deterministic tests, and matches what developers say they accept [69]. No eval source gives a time budget. What the projects in 5.1 do is closer to Google's split [67]: fast, cheap or recorded checks before merge, and repeated or full model runs daily or weekly.
+
+## 6. The old note's threshold numbers
+
+The old note cites no source for seven numbers. For each one, the question is whether a paper, a tool's documentation or a real project supports the value itself, or a method that derives the value from measured noise. Arithmetic marked as an estimate is mine.
+
+| Number in the old note | Value supported | Method supported | Summary |
+| --- | --- | --- | --- |
+| Run is unmeasured above 5% failed calls | No | Yes, a fractional error tolerance | 6.1 |
+| Alarm needs a drop of at least 5 points and a paired 95% interval below 0 | No | Yes, minimum detectable effect from measured variance | 6.2 |
+| Retrieval may lose at most 1 question | No | Yes, a binomial allowance from repeated identical runs | 6.3 |
+| Latency ceilings start at 2 times the baseline | No | Yes, a ratio gate from measured run-to-run spread | 6.4 |
+| Self-agreement below 90% on 20 answers leads to a majority of 3 | No | Majority voting is supported; the 90% and the 20 are not | 6.5 |
+| About 10 judge canaries a night, all correct | No | Gold items are an established practice; the all-of-10 rule is not | 6.6 |
+| 10 minutes per pull request | Yes, as a convention and a stated developer preference | Not applicable | 6.7 |
+
+### 6.1 "Unmeasured" above 5% failed calls
+
+- **Documented.** Inspect AI has a fractional tolerance: `fail_on_error=0.1` means "Fail if more than 10% of total samples have errors", and the default fails on the first error [75]. DeepEval's `ignore_errors` is all or nothing [76]. promptfoo's pass-rate threshold "defaults to 100%" [77]. lm-evaluation-harness retries an API call 3 times and then raises the error [78]. None of them suggests 5%.
+- **Measured.** MathArena found that failed requests are more often long, hard ones, so "frequent retries can overestimate performance by up to 5 percent". It recommends reporting the retry policy and the number of retries [79].
+- **Real project.** Keiko's review lab fails a run on coverage above 20% incomplete reviews (old note, section 1.2).
+- **New on AWS (documented).** Bedrock may throttle requests inside the quota and asks clients to retry with backoff [63]. Throttling is therefore a normal event, and a failure should count only after the bounded retries are spent.
+- **Method (estimate).** If a fraction f of answers is missing, the true score can lie anywhere in a band f wide. At f = 5% the band is 5 points, as wide as the alarm floor of 6.2, so missing answers alone could move a run across the alarm line. A tolerance at or below half the smallest alarm, or reporting the bounds, avoids that. For a run of 300 calls with the limit at 15 failures, the chance that a run is declared unmeasured is 0.02 at a true failure rate of 3%, 0.43 at 5% and 0.97 at 8%.
+
+### 6.2 A drop of at least 5 points and a paired 95% interval below 0
+
+- **Documented method.** Miller's formula for the minimum detectable effect of a paired comparison uses the variance of per-question differences, the within-question variance across repetitions, the repetitions per question K and the number of questions n [80]. His worked example: at n = 198, raising K from 1 to 10 lowers the detectable effect from 13.2 to 7.5 points.
+- **Documented.** Bowyer et al. show that intervals from the central limit theorem are too narrow on small evals; at N = 100 a nominal 95% interval covers "only 92.5%" [81]. They recommend Wilson or Bayesian intervals, and paired methods for comparisons. Card et al. find that "underpowered experiments are common in the NLP literature" [82].
+- **Precedent for the two-part rule.** Mozilla's Perfherder raises a performance alert only when the change exceeds 2% and a t statistic of 7 at the same time [89]. That is the same shape as "at least 5 points and an interval below 0", with different values.
+- **Estimate, with K = 3 on both runs, two-sided 5% level and 80% power:**
+
+| Variance of per-question differences | Variance across repetitions | Detectable at n = 50 | Detectable at n = 100 | n for 5 points |
+| --- | --- | --- | --- | --- |
+| 1/9 | 1/6 (Miller's example values) | 18.7 points | 13.2 points | 698 |
+| 0.05 | 0.05 | 11.4 points | 8.1 points | 262 |
+| 0.02 | 0.05 | 9.1 points | 6.5 points | 167 |
+
+- **Judgment.** With 50 to 100 questions the interval condition decides almost every alarm, and the 5-point floor matters only when the measured noise is low. This agrees with the old note's statement that 50 questions detect about 12 points. The way to set the floor is to run the baseline against itself, estimate both variances, compute the detectable effect, and set the floor to the larger of that effect and the smallest drop the owner cares about. Lakens lists ways to justify such a smallest effect of interest [84].
+
+### 6.3 Retrieval may lose at most 1 question
+
+- **Measured.** ReproRAG found flat, IVF, HNSW and LSH indexes fully reproducible on CPU with a fixed index and cached embeddings; inserting data afterwards lowered HNSW overlap to 0.793 [85]. Multithreaded hnswlib builds gave recall of 1.0 or 0.9999 across builds [86]. Lucene's HNSW used the clock as seed until version 9.1 [86]. Unstable tie-breaking between equal scores breaks repeatability across index copies [87].
+- **Anecdote, not a study.** A user reported that repeated OpenAI embedding calls sometimes returned different vectors [88]. I found nothing on Cohere Embed v4 or the Bedrock knowledge base.
+- **New on AWS (judgment).** Query embeddings now come from an API that may run in six Regions (section 3.2), and the managed knowledge base arm of ADR-0017 is a service the project does not control. Retrieval is deterministic only if the query embeddings are cached and the index is frozen.
+- **Method (estimate).** Run retrieval against itself a few times and measure the share q of questions whose gold passage drops out. The chance that 2 or more of n questions drop out by noise alone is then binomial: 0.026 at q = 0.5% and n = 50, 0.089 at q = 1% and n = 50, 0.264 at q = 1% and n = 100. With cached embeddings and a frozen index, q is 0 and any lost question is a real change. No project I found uses a rule of the form "at most N questions may regress".
+
+### 6.4 Latency ceilings at 2 times the baseline
+
+- **Documented.** Perfherder's default regression threshold is 2% [89]. CodSpeed's default threshold is 10% [90]. Bencher's examples use a t-test [91]. MongoDB replaced fixed thresholds with change-point detection [92].
+- **Measured.** CodSpeed measured a coefficient of variation of 2.66% on GitHub-hosted runners and needed "a 7% performance gate" to keep false positives at 1% [90].
+- **Managed model APIs.** I found no published run-to-run latency spread for Bedrock. Artificial Analysis publishes medians over five days and no percentiles (P2 and its sources).
+- **Method (estimate).** Measure the standard deviation of the logarithm of p50 or p95 latency over several identical runs, and set the gate to exp(z × sd × √2). A gate of 2 times corresponds to z = 1.96 at sd = 0.25, or to z = 2.58 at sd = 0.19. The old note tied latency baselines to the Mac; on AWS the baseline belongs to one installation, instance type and model route.
+
+### 6.5 Self-agreement below 90% on 20 answers leads to a majority of 3
+
+- **Measured.** In Rating Roulette, a majority of 3 runs raised balanced accuracy by about 1 to 3 points over a single run, and binary self-agreement (Krippendorff's alpha over 3 runs) was 0.33 to 0.79 [51]. A panel of three judges with a vote agreed better with humans than one GPT-4 judge (Cohen's kappa 0.763 against 0.627 on one dataset) [94]. Yagubyan needed about 11 trials for a vote to match the 50-trial verdict with 95% probability [52].
+- **Real project.** Mattermost's nightly evals run each eval 3 times, "combined by majority vote" (section 5.1).
+- **Conventions, not evidence.** Krippendorff's alpha of 0.800 is the usual bar and 0.667 the floor for tentative conclusions. The Landis and Koch bands for kappa rest on the authors' opinion [93]. I read both through Wikipedia, not the originals.
+- **Estimate.** 18 of 20 agreeing answers has a Wilson 95% interval of 0.70 to 0.97. A judge that truly agrees with itself 85% of the time passes the "at least 18 of 20" test with probability 0.41, and one at 95% with 0.93. Twenty answers cannot tell these apart.
+- **Method (estimate).** Estimate the per-call flip probability p on a larger fixed set with at least 5 repetitions. A majority of 3 is wrong with probability 3p² − 2p³: 0.007 at p = 0.05, 0.028 at p = 0.1 and 0.22 at p = 0.3. Close-call items flip far more often than the average [54], so the rule should look at the share of items with any flip, not only at the average.
+
+### 6.6 About 10 judge canaries a night, all correct
+
+- **Documented practice.** Crowdsourcing platforms mix known-answer test questions into the work and require a minimum accuracy on them [95]. No default value is stated there.
+- **Estimate.** A judge with 98% accuracy on canaries passes 10 of 10 with probability 0.82, so it fails about 5.5 nights in 30. At 95% accuracy it passes with 0.60 and fails about 12 nights in 30. This assumes independent outcomes; fixed canaries instead fail on the same item every night.
+- **Method (estimate).** Choose the number of canaries n and the allowed misses m so that a good judge rarely fails and a bad one rarely passes. For example, 20 canaries with up to 2 misses pass a 95% judge with probability 0.92 and an 80% judge with probability 0.21.
+
+### 6.7 10 minutes per pull request
+
+- **Documented convention.** XP's "Ten-Minute Build", repeated by Fowler [66] and by DORA as "an upper limit of about 10 minutes" [68].
+- **Measured preference.** 10 minutes was the most common answer for the longest acceptable build in a survey of 523 developers [69]. Ghaleb et al. take 10 minutes as the acceptable duration and find many builds far longer [96]. No study I found links the 10 minutes to outcomes such as defects or delivery speed.
+- **Real project.** The pull request evaluation of threat-composer took 550 to 1,066 seconds (section 5.1), so 9 to 18 minutes, above the budget.
