@@ -204,6 +204,44 @@ The old note served the judge one request at a time on the Mac, because batch si
 | Gemma 4 26B-A4B | As 31B | Yes | Standard $0.156 / $0.48; flex $0.078 / $0.24 | [55, 60] |
 | Claude Haiku 5.5, Sonnet 5.5 | No. The model cards list only Standard | No | Standard only (P2) | [47, 55] |
 
-Batch rules (documented): a job needs at least 100 records for Qwen3 235B [31b], its timeout is 24 to 168 hours with no completion promise [56], "the order of records in the output JSONL file is not guaranteed" [56], and prompt caching "is not supported with the batch inference API" [58]. The AWS pricing page states that batch is "50% lower" than on-demand and that Flex is "at 50% discount to Standard" [59]. The service tier page names model evaluations as a Flex workload, and the CloudWatch metric `ResolvedServiceTier` "shows the actual tier that served your requests" [61]. I found no batch API on `bedrock-mantle`; the documented OpenAI-style batch API is on `bedrock-runtime` "with Amazon Bedrock OpenAI models" [57].
+Batch rules (documented): a job needs at least 100 records for Qwen3 235B [62], its timeout is 24 to 168 hours with no completion promise [56], "the order of records in the output JSONL file is not guaranteed" [56], and prompt caching "is not supported with the batch inference API" [58]. The AWS pricing page states that batch is "50% lower" than on-demand and that Flex is "at 50% discount to Standard" [59]. The service tier page names model evaluations as a Flex workload, and the CloudWatch metric `ResolvedServiceTier` "shows the actual tier that served your requests" [61]. I found no batch API on `bedrock-mantle`; the documented OpenAI-style batch API is on `bedrock-runtime` "with Amazon Bedrock OpenAI models" [57].
 
 **Judgment.** Batch and Flex change the price and the wait, not the repeatability. For a nightly judge of 150 to 300 calls, the saving is cents (section 4). Batch also has no completion time, so a morning verdict is not guaranteed. Flex is worth a trial for the weekly full profile with a Gemma or Qwen judge.
+
+## 4. Run time and cost of one run
+
+### 4.1 Default quotas in eu-central-1
+
+| Model and route | Default quota | Adjustable | Source |
+| --- | --- | --- | --- |
+| Claude Haiku 5.5, cross-Region (EU) | 10,000,000 tokens per minute. No requests-per-minute quota is listed | Yes | [62] |
+| Claude Sonnet 5.5, cross-Region (EU) | 6,000,000 tokens per minute. No requests-per-minute quota is listed | Yes | [62] |
+| Qwen3 235B A22B 2507, on-demand | 10,000 requests and 100,000,000 tokens per minute | No | [62] |
+| Gemma 4 26B-A4B and 31B, `bedrock-mantle` | Separate input and output tokens per minute, no requests-per-minute quota. "Default limits aren't surfaced directly through Service Quotas", and AWS says to ramp up gradually | Support case only | [47, 63, 64] |
+| Amazon Rerank 1.0 / Cohere Rerank 3.5 | 200 / 250 requests per minute | No | [62] |
+| Cohere Embed v4, cross-Region (EU) | 300,000 tokens and 2,000 requests per minute | Tokens yes | [62], P1 |
+
+How the quota counts (documented): on `bedrock-runtime` a request reserves "total input tokens + max_tokens" at its start, and output tokens count with a model-specific burndown rate. The page names rates of 5, 10 and 15 for various Claude versions, but it names neither Haiku 5.5 nor Sonnet 5.5 [65]. On `bedrock-mantle` the input quota is checked against input plus `max_tokens`, and output is counted against its own quota [64]. AWS also says that "not all requests within a quota are guaranteed to succeed during periods of high demand", and that clients should retry with backoff [63]. Account quotas "might be lower than the default values" (P1).
+
+### 4.2 Estimate for one run
+
+**Inputs.** One run evaluates one configuration of the stack on the gold set, with 3 repetitions, as the old note's nightly run did. Per answer 20,000 input and 1,000 output tokens, per judge call 6,000 input and 500 output tokens with one judge call per answer, and three reranked subqueries per question, all from P2. Plus 10 judge canaries. Prices come from P2 and section 3.5, EC2 at $0.0818 an hour from section 2.1. Latency per answer is 5 to 20 seconds and per judge call 2 to 8 seconds. This range is my assumption, because nobody has measured Haiku 5.5 or Gemma 4 latency on Bedrock in Frankfurt (P2, "Latency"). The run includes no confirmation run. The arithmetic is in a short script, not in the repository.
+
+**Estimate, model cost per run in USD:**
+
+| Item | 50 questions, 150 answers | 100 questions, 300 answers |
+| --- | --- | --- |
+| Answers, Gemma 4 31B | 0.58 | 1.15 |
+| Answers, Gemma 4 26B-A4B | 0.54 | 1.08 |
+| Answers, Claude Haiku 5.5 | 0.41 | 0.83 |
+| Judge, Claude Haiku 5.5 | 0.15 | 0.29 |
+| Judge, Gemma 4 31B, standard / flex | 0.20 / 0.10 | 0.39 / 0.19 |
+| Judge, Qwen3 235B, standard / batch | 0.37 / 0.19 | 0.72 / 0.37 |
+| Judge, Claude Sonnet 5.5 | 2.99 | 5.80 |
+| Reranking, Amazon / Cohere | 0.45 / 0.90 | 0.90 / 1.80 |
+
+**Estimate, wall-clock time of the model calls.** At one request at a time a run takes 17.5 to 70 minutes for 50 questions and 35 to 140 minutes for 100. With 4 parallel requests it takes 4.4 to 17.5 and 8.8 to 35 minutes. Instance start, container start and the agent's registration come on top. I did not measure them.
+
+**Estimate, total per run.** A cheap combination (Gemma 4 31B answers, Haiku 5.5 judge, Amazon Rerank, one hour of EC2) costs about $1.26 for 50 questions and $2.42 for 100. With Sonnet 5.5 as judge it costs about $4.10 and $7.93. Run every night for 30 days, the cheap combination costs about $38 and $73 a month. That is more than the $17.82 the installation itself costs for 168 hours of use a month (P1). Run weekly, it costs about $5 and $10 a month.
+
+**Quotas do not limit this run (estimate).** At 20,000 input tokens plus a `max_tokens` of 4,000, the Haiku 5.5 quota of 10 million tokens per minute admits about 416 answers a minute, against 150 to 300 answers per run. Even a burndown rate of 15 on 1,000 output tokens leaves room for about 285 answers a minute. The unknown is Gemma 4 on `bedrock-mantle`, whose quota is not published. The ramp-up advice [63] suggests starting at low concurrency and raising it only while no 429 errors appear.
