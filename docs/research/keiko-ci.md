@@ -340,3 +340,42 @@ Judgment. These reports show that a ratchet can move a large code base to strict
 | METR, [RCT on experienced developers](https://arxiv.org/abs/2507.09089), 2025 | 16 developers, 246 tasks | 19% slower with AI (95% interval +2% to +39%); a 2026 update estimated −4% | Context only | Abstract |
 
 Judgment. The failure modes of agent-written code have firm numbers: security weaknesses in 25% to 40% of generated code in these samples, 19.7% hallucinated packages, type errors as most compile failures of LLM TypeScript, heavy `any` use, and test tampering in 50% to 76% of impossible tasks. The gates these numbers point to are a blocking type check that bans escape hatches, a security analyzer, dependency review on a lockfile, tests that agents cannot quietly change, and mutation checks of agent-written tests. None of the studies measures a CI gate's effect on shipped defects. Most 2026 agent papers are unreviewed preprints, and the vendor reports have undisclosed methods.
+
+## 5. Cost and fit for this repository
+
+### 5.1 What is free for a public repository
+
+Documented on the vendors' pages, read 2026-11-21 (delegated read; quotes as reported):
+
+| Service | Free on a public repository | Source |
+| --- | --- | --- |
+| GitHub Actions, standard hosted runners | "Use of the standard GitHub-hosted runners is free and unlimited on public repositories." This includes macOS and Windows standard runners. "Larger runners are billed for public repositories." Free plan limits: 20 concurrent jobs, 5 concurrent macOS jobs, 6 hours per job | [Choose the runner](https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job), [Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions), [Actions limits](https://docs.github.com/en/actions/reference/limits) |
+| CodeQL code scanning, secret scanning, push protection | Free on public repositories: "Public repositories: Secret scanning runs automatically for free." Code scanning on private repositories needs a GitHub Code Security licence | [About GitHub Advanced Security](https://docs.github.com/en/get-started/learning-about-github/about-github-advanced-security), [secret scanning](https://docs.github.com/en/code-security/secret-scanning/introduction/about-secret-scanning), [code scanning](https://docs.github.com/en/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning) |
+| Dependency review action | "The action is available for all public repositories". The Advanced Security feature table marks dependency review "No" for a public repository without Code Security, so the two pages disagree; Keiko, a public organisation repository, ran it green 58 of 60 times | [About dependency review](https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/about-dependency-review) |
+| Dependabot alerts and the dependency graph | Included in all plans | About GitHub Advanced Security |
+| SonarQube Cloud | Free plan: "Analysis of public projects: unlimited number of projects"; pull-request analysis "Only if the target branch is the main branch"; an OSS plan for public repositories | [Subscription plans](https://docs.sonarsource.com/sonarqube-cloud/administering-sonarcloud/managing-subscription/subscription-plans) |
+| Codecov, Coveralls | Unlimited uploads for public repositories; "Coveralls will always be free for open source." | [Codecov pricing](https://about.codecov.io/pricing/), [Coveralls pricing](https://coveralls.io/pricing) |
+| Gitleaks, OSV-Scanner, actionlint, zizmor | Free tools (MIT, Apache-2.0, MIT, MIT). The `gitleaks-action` from v2 needs a licence key for organisations; running the binary, as Keiko does, avoids that | [gitleaks-action README](https://github.com/gitleaks/gitleaks-action) |
+| OpenSSF Scorecard action | "free for all public repositories" | [scorecard-action](https://github.com/ossf/scorecard-action) |
+| Socket | "Socket is and will always be free to use for open-source." | [Socket pricing](https://socket.dev/pricing) |
+| Stryker Dashboard, mutmut, Cosmic Ray | Dashboard "is free to use and open source"; the Python tools are local and free | [Stryker Dashboard](https://stryker-mutator.io/docs/General/dashboard/) |
+
+So money is not the constraint for `Niko4417/OPT-cc` as long as it stays public and uses standard runners. The constraints are wall-clock time per pull request, the owner's time to read results, and the code that keeps the gates running.
+
+### 5.2 How comparable small projects set up CI
+
+Measured by a delegated read of each repository at a pinned commit; sizes are GitHub language byte counts, not lines. Times are medians of recent pull-request runs from the Actions API (`updated_at` minus `run_started_at`), so they are approximate. I spot-checked the workflow lists of chonkie, LightRAG and Open WebUI.
+
+| Project | Size and maintainers | Lint and format | Type check | Tests on pull requests | Security scans | Action pinning | Median PR time |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [chonkie](https://github.com/chonkie-inc/chonkie/tree/664454b689d68614bcfc0b1d57fc2a28b5862825/.github/workflows) (a dependency of this project) | Python 1.7 MB; effectively 2 maintainers | Ruff, `select = ["B904", "F", "I", "D"]`, `ruff format --check` | `ty check src/chonkie` blocks; tests checked with `continue-on-error` | pytest on Python 3.10 to 3.13, coverage to Codecov without a gate | TruffleHog (on `@main`), Dependabot | Tags, one SHA | 2.4 min |
+| [txtai](https://github.com/neuml/txtai/tree/351a2bada485716d75acd7a6217c5bdcc84cb380/.github/workflows) | Python 1.7 MB; 1 maintainer | pylint and black via pre-commit, `duplicate-code` disabled | None | unittest on Ubuntu, macOS, Windows; `coverage report --fail-under=100` | None | Tags | 55 min |
+| [docling-serve](https://github.com/docling-project/docling-serve/tree/69fb0588c5e04e09b4b6b6a8edf9613e812b3c36/.github/workflows) (glue service around docling) | Python 0.46 MB, TypeScript 0.13 MB | Ruff with a wide select, mccabe 15, Vale | `ty`, `tsc -b` | None; wheel install smoke only | actionlint | Mixed | 16.5 min (container builds) |
+| [obsidian-local-llm-hub](https://github.com/takeshy/obsidian-local-llm-hub/tree/a266afe79231e3f7c18ad2b48aac02dd0c160753/.github/workflows) (TypeScript RAG plugin) | TypeScript 0.73 MB; 1 maintainer | ESLint `recommendedTypeChecked` with `no-unsafe-*` as errors, `--max-warnings 0` | `tsc -noEmit`, `strict: true` | None; tests exist but are not run | None | Tags | 0.6 min |
+| [Open WebUI](https://github.com/open-webui/open-webui/tree/0666e59d26a4d056e0bacee41742486badd71cf8/.github/workflows) (stack candidate) | Svelte, Python, TypeScript, 12 MB | `ruff check --select=F`, Prettier | None | Frontend vitest only | Dependabot | Tags plus `actions.lock` | 1.8 min |
+| [LightRAG](https://github.com/HKUDS/LightRAG/tree/f2e2d3f06fc1b3b50a521420a01059f410235a71/.github/workflows) (stack candidate) | Python 18.8 MB | Ruff via pre-commit, `select = ["E4","E7","E9","F"]` | `tsc --noEmit` for the web UI only | pytest in 4 shards, web UI tests | Dependabot | Major tags | 2.1 min |
+| Keiko `dev` (stack candidate) | TypeScript 122 MB | ESLint strict type-checked, Prettier, knip, Fallow | `tsc` strict | Everything, plus end-to-end | CodeQL, dependency review, OSV, Gitleaks, zizmor, actionlint, Socket, SonarQube Cloud | SHA, checked by CI | 53 to 58 min |
+
+Documented in those files. A typical small project runs Ruff, a test matrix and an optional coverage upload in 2 to 3 minutes. Two of the four small projects gate on a type checker (`ty`); none of the small Python projects uses mypy or Pyright. Among the small projects, only chonkie runs a security scan, and none runs CodeQL as a workflow, dependency review, OSV-Scanner, zizmor, mutation testing or duplication checks. Two of them have test suites that CI never runs. Only Keiko pins every action to a SHA.
+
+Judgment. The small projects show what is normal, not what works. They give no evidence that their light CI is enough, and the agent studies in section 4.6 point at gates (dependency review, security analysis, test protection) that none of them runs.
