@@ -107,7 +107,7 @@ The installation from P1 is one EC2 t4g.large with Docker Compose, a 30 GB gp3 v
 
 | Item | Price in eu-central-1 | Source |
 | --- | --- | --- |
-| EC2 t4g.large while running, plus its public IPv4 address | $0.0768 + $0.005 = $0.0818 an hour. Each start bills at least one minute, then per second | P1 [20, 22, 23], [27a] |
+| EC2 t4g.large while running, plus its public IPv4 address | $0.0768 + $0.005 = $0.0818 an hour. Each start bills at least one minute, then per second | P1, [33] |
 | EventBridge Scheduler | First 14 million invocations a month free, then $1.15 per million | [28] |
 | Systems Manager Automation | $0.002 per step; `aws:executeScript` $0.00003 per second | [27] |
 | Systems Manager Run Command on EC2 | "No additional charges" | [26, 27] |
@@ -120,7 +120,7 @@ The Systems Manager Price List file for Frankfurt (published 2026-11-18) has no 
 
 **A. EventBridge Scheduler starts a Systems Manager Automation runbook.** A schedule calls `ssm:StartAutomationExecution` through a universal target (`arn:aws:scheduler:::aws-sdk:ssm:startAutomationExecution`) [17]. The runbook records the instance state, starts the instance with `aws:changeInstanceState` (default timeout one hour) [20], runs the harness with `aws:runCommand` [21], and stops the instance again. A step's `onFailure` property can send a failed run to the stop step [22].
 
-**B. A timer inside the instance.** A systemd timer fires only while the instance runs. With `Persistent=true` it fires at the next boot if it missed a run "when the system was powered down" [31]. On an instance that is usually stopped, that means the evaluation would start whenever the consultant starts the instance to work (judgment). A variant lets EventBridge Scheduler call `ec2:startInstances` and lets a boot unit run the harness and shut the instance down. An operating system shutdown stops the instance by default (P1 [23]).
+**B. A timer inside the instance.** A systemd timer fires only while the instance runs. With `Persistent=true` it fires at the next boot if it missed a run "when the system was powered down" [31]. On an instance that is usually stopped, that means the evaluation would start whenever the consultant starts the instance to work (judgment). A variant lets EventBridge Scheduler call `ec2:startInstances` and lets a boot unit run the harness and shut the instance down. An operating system shutdown stops the instance by default (P1, [33]).
 
 **C. A GitHub Actions workflow on `main` starts the same runbook.** A `schedule`, `push` or `workflow_dispatch` workflow assumes a role through OIDC (section 1.2), calls `StartAutomationExecution`, waits, and reads the scorecard from S3.
 
@@ -129,7 +129,7 @@ The Systems Manager Price List file for Frankfurt (published 2026-11-18) has no 
 | | A. Scheduler and Automation | B. Timer in the instance | C. GitHub workflow starts the runbook | D. Stack on a GitHub runner |
 | --- | --- | --- | --- | --- |
 | AWS cost of the trigger per run (estimate) | About $0.01: 5 Automation steps at $0.002 [27]; Scheduler free [28] | $0 for the variant with Scheduler starting the instance [28] | As A, about $0.01 | $0 |
-| Compute per run of 1 hour (estimate) | $0.08 on EC2 [27a] | $0.08 | $0.08 on EC2; the runner that waits is free [9] | $0 on the runner [9]. Rebuilding a small project memory adds about $3.60 of Cohere Embed v4 and at least 100 minutes (P1, P2) unless it is restored from S3 |
+| Compute per run of 1 hour (estimate) | $0.08 on EC2 [33] | $0.08 | $0.08 on EC2; the runner that waits is free [9] | $0 on the runner [9]. Rebuilding a small project memory adds about $3.60 of Cohere Embed v4 and at least 100 minutes (P1, P2) unless it is restored from S3 |
 | Credentials, and where they live | Only AWS roles: the Scheduler role (start one runbook), the Automation role (start, stop, describe the instance, send one command), the instance role (Bedrock, S3). Nothing outside AWS | Only the instance role, plus `ec2:StartInstances` for Scheduler | As A, plus one role that trusts the `evaluation` environment and may start one runbook and read one S3 prefix. GitHub holds only the role ARN, which is not secret | A role that GitHub can assume with Bedrock invoke rights, `bedrock-mantle:CreateInference` and read access to the snapshot bucket |
 | Result and exit status | Scorecard written to S3 by the harness. The Automation status ("Success", "Failed", "TimedOut") is an EventBridge event [32] that a rule can send to SNS email [29]. Run Command returns at most the first 24,000 characters of stdout [25], so the scorecard must not travel through stdout | The harness must upload to S3 and publish to SNS itself. A hung run is caught only by a timeout set on the unit (judgment) | As A, plus a check run or commit status on the `main` commit, a job summary and a failed workflow, all with `GITHUB_TOKEN` | Job summary and artifacts on GitHub. These are public [12], so only body-free numbers may go there |
 | Fits the CloudFormation template | Yes: `AWS::Scheduler::Schedule` [18], `AWS::SSM::Document` with `DocumentType: Automation` [19], IAM roles, an SNS topic and an EventBridge rule | Yes, but the unit file lives in the instance's user data or image, not as a resource | Yes: as A plus `AWS::IAM::OIDCProvider` and one role. The workflow file lives in this repository | The role only. The stack definition must also run outside AWS |
@@ -144,3 +144,66 @@ Notes on the table:
 ### 2.3 Judgment
 
 Option A fits best for scheduled runs. It keeps every credential in AWS, costs about one cent per run beyond the instance time, survives a repository without activity, and fits the template P1 recommends. Option C is a good second trigger for runs a person wants now, for example after a merge, because it reuses A's runbook and reports the verdict on the commit. Option B alone does not work on a stopped instance. Option D breaks the rule of ADR-0032 that the scored snapshot stays in the installation's AWS account, and it rebuilds or downloads the project memory every time.
+
+## 3. Repeatability of Bedrock model outputs
+
+### 3.1 Temperature, seeds and version pinning
+
+| Model and route | Temperature 0 | Seed | Version pinning | Sources |
+| --- | --- | --- | --- | --- |
+| Any Bedrock model, Converse API | A lower temperature "leads to more deterministic responses". The page promises nothing beyond that | The Converse `InferenceConfiguration` has `maxTokens`, `stopSequences`, `temperature` and `topP`, and no seed | See the rows below | [34, 35] |
+| Claude Haiku 5.5 and Sonnet 5.5, EU geo profile | Anthropic: on Haiku 5.5 "omit `temperature`, `top_p`, and `top_k`". Under API version 2026-10-21 a sampling parameter "returns a 400 error", and a request without one samples at temperature 1.0. AWS's Claude parameter page still lists `temperature` from 0 to 1 and says nothing about 5.5 | None documented | Bedrock IDs `anthropic.claude-haiku-5-5` and `anthropic.claude-sonnet-5-5` carry no version suffix. Anthropic: a model ID is "a pinned snapshot", but the serving infrastructure, including the "request router, safety classifiers, and sampling logic", can change | [36, 37, 40, 47] |
+| All Claude models | "Even with temperature set to 0, the results will not be fully deterministic." This applies also "to inference through third-party cloud providers" | | | [38] |
+| Gemma 4 26B-A4B and 31B, `bedrock-mantle` | The model cards give no sampling guidance. The upstream model card recommends temperature 1.0, `top_p` 0.95 and `top_k` 64 | No AWS page I read mentions `seed` for `bedrock-mantle` | IDs `google.gemma-4-31b` and `google.gemma-4-26b-a4b` | [39, 47] |
+| Qwen3 235B A22B 2507, in-Region | Not stated on the model card | Not documented | ID `qwen.qwen3-235b-a22b-2507-v1:0` | [47] |
+
+**Lifecycle (documented).** Each Bedrock model card shows an "EOL no sooner than" date: 2027-10-07 for Haiku 5.5, 2027-09-28 for Sonnet 5.5 and 2027-03-31 for both Gemma 4 models. In the Legacy period "existing customers may lose access after 15 days of inactivity", and after the end of life there is no automatic migration [41]. A judge that runs only now and then can lose access once its model turns Legacy (judgment).
+
+**Serving changes (documented).** Anthropic's postmortem of September 2025 describes a compiler bug that produced wrong results "only for certain batch sizes and model configurations", and a routing error that reached 0.18% of Claude Sonnet 4 requests on Bedrock [42]. The model ID did not change in either case.
+
+**Consequence (judgment).** If the Anthropic rule applies on Bedrock, which one test call would show, a Claude judge cannot run at temperature 0 at all. The old note's first rule ("judge at temperature 0") then holds only for Gemma and Qwen, and even there it does not make verdicts repeatable (section 3.3).
+
+### 3.2 Can the same request reach different hardware or Regions?
+
+- **EU geo profile.** Bedrock "automatically selects a commercial AWS Region within that geography to process" the request [43]. From Frankfurt the EU profiles of the Claude 5.5 models route to Frankfurt, Stockholm, Milan, Spain, Ireland and Paris (P1, [47]). Two calls in a row can therefore run in different Regions (documented).
+- **Which Region served a call.** CloudTrail records it: "Look for the `additionalEventData.inferenceRegion` field" [43]. For streaming calls the field sits in a separate stream-completion event [44]. Model invocation logs record only the Region "where the invocation was made", and calls to `bedrock-mantle` are "not currently captured by invocation logging" [45].
+- **`bedrock-mantle`.** It has no cross-Region inference, so Gemma 4 stays in Frankfurt. Both endpoints "use the same underlying Mantle inference engine", and a request "may be briefly queued while in-flight workloads complete" [46]. Requests from all customers share that engine (judgment from [46]).
+
+I found no AWS statement on whether the destination Regions run the same hardware or software versions.
+
+### 3.3 Published measurements of run-to-run variance
+
+| Source | Setup | Result (measured) |
+| --- | --- | --- |
+| Atil et al., arXiv 2408.04667 v5 [48] | GPT-3.5 Turbo, GPT-4o, Llama-3-70B, Llama-3-8B and Mixtral-8x7B through APIs; temperature 0, top-p 1, fixed seed; 8 tasks; 10 runs | Accuracy varied "up to 15%" across runs. The gap between the best possible and the worst possible accuracy over the runs reached about 70 points (Mixtral, few-shot college math, 75% against 3%). Parsed answers agreed across all 10 runs on 7.0% to 99.6% of questions. Llama-3-8B on the authors' own GPUs was deterministic |
+| Thinking Machines (Horace He), 2025-09-10 [49] | Qwen3-235B-A22B-Instruct-2507, 1,000 completions at temperature 0 | 80 distinct completions; the most common occurred 78 times. The cause is batch size changing with server load. Batch-invariant kernels made all 1,000 identical, at about 1.6 to 2.1 times the run time on one GPU |
+| Yuan et al., arXiv 2506.09501 v2 [50] | 12 configurations of GPU type, GPU count and batch size, greedy decoding | "Up to 9% variation in accuracy" in BF16. FP32 removed the variation at about twice the memory and time |
+| Haldar and Hockenmaier, arXiv 2510.27106 [51] | Local judges at temperature 0.6, 3 runs | Qwen3 gave the same verdict on all 3 runs for 61.3% of cases. A majority of 3 raised balanced accuracy by about 1 to 3 points |
+| Yagubyan, arXiv 2606.13685 [52] (single-author preprint) | GPT-4o-mini and GPT-4.1-mini as pairwise judges, repeated identical calls | Flip rate 13.6% at default temperature. At temperature 0 it fell to 2.8% and 7.9%. About 11 trials were needed for a majority vote to match the 50-trial verdict with 95% probability |
+| Tamba, arXiv 2606.26185 v3 [53] (single author) | Anthropic API | At temperature 0, Sonnet 4.6 and Haiku 4.5 each flipped on 1 of 7 borderline items. Claude Opus 5.5 without sampling parameters left 46 of 2,001 items (2.3%) split over 4 runs. The paper's call counts are inconsistent |
+| Ayyagari, arXiv 2609.33044 v2 [54] (abstract only) | Four judges on "a single major enterprise cloud platform", temperature 0 | About 5% of items flip on average, about 40% of close-call items, 0.13% to almost 10% per judge |
+
+No source measured Bedrock or Claude 5.5 on Bedrock. The three 2026 preprints have one author each and are not peer-reviewed. I read only the abstract of the last one.
+
+### 3.4 What replaces "one request at a time"
+
+The old note served the judge one request at a time on the Mac, because batch size is the main cause of temperature-0 drift [49]. On Bedrock the customer does not control batching [46]. Judgment, from the sources above:
+
+1. **Measure the judge's own noise instead of removing it.** Before the first scored run and after every change of judge model, prompt or route, judge a fixed set several times. The literature uses 3 to 50 repetitions [48, 51, 52]. The flip rate per item decides how many calls each verdict needs (section 6.5).
+2. **Keep the verdict cache.** It still makes re-scoring stored answers repeatable, because a cached verdict is not recomputed. It does not help new answers.
+3. **Pin what can be pinned and record the rest.** Store per call the model ID, the inference profile, the service tier, the date and, for the EU profile, `inferenceRegion` from CloudTrail [43, 44, 61]. A baseline is comparable only when these match, as the old note's section 4.4 already requires for model revisions.
+4. **Prefer an in-Region judge for repeatability.** Gemma 4 on `bedrock-mantle` and Qwen3 235B stay in Frankfurt [46, 47]. A Claude judge through the EU profile may run in six Regions. This removes one source of variation, not the batching.
+5. **Use binary verdicts.** The old note's reasons (Rating Roulette and the Reference-Guided Verdict paper) are unchanged.
+
+### 3.5 Batch inference and the Flex tier for judge calls
+
+| Model | Batch in eu-central-1 | Flex tier | Price per million input / output tokens | Sources |
+| --- | --- | --- | --- | --- |
+| Qwen3 235B A22B 2507 | Yes, single-Region | Yes | Standard $0.29 / $1.16; batch $0.15 / $0.58; flex $0.145 / $0.58 | [55, 60] |
+| Gemma 4 31B | Not on the documented list. The Price List has `-batch` SKUs at the flex price | Yes | Standard $0.168 / $0.48; flex $0.084 / $0.24 | [55, 60] |
+| Gemma 4 26B-A4B | As 31B | Yes | Standard $0.156 / $0.48; flex $0.078 / $0.24 | [55, 60] |
+| Claude Haiku 5.5, Sonnet 5.5 | No. The model cards list only Standard | No | Standard only (P2) | [47, 55] |
+
+Batch rules (documented): a job needs at least 100 records for Qwen3 235B [31b], its timeout is 24 to 168 hours with no completion promise [56], "the order of records in the output JSONL file is not guaranteed" [56], and prompt caching "is not supported with the batch inference API" [58]. The AWS pricing page states that batch is "50% lower" than on-demand and that Flex is "at 50% discount to Standard" [59]. The service tier page names model evaluations as a Flex workload, and the CloudWatch metric `ResolvedServiceTier` "shows the actual tier that served your requests" [61]. I found no batch API on `bedrock-mantle`; the documented OpenAI-style batch API is on `bedrock-runtime` "with Amazon Bedrock OpenAI models" [57].
+
+**Judgment.** Batch and Flex change the price and the wait, not the repeatability. For a nightly judge of 150 to 300 calls, the saving is cents (section 4). Batch also has no completion time, so a morning verdict is not guaranteed. Flex is worth a trial for the weekly full profile with a Gemma or Qwen judge.
