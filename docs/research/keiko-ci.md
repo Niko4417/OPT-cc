@@ -10,7 +10,11 @@ Should the project memory replicate Keiko's whole CI as it is on GitHub today? S
 
 ## Short answer
 
-To be completed after all parts.
+- Do not replicate Keiko's whole CI. A green pull request to `dev` takes 53 minutes and 392 job-minutes over 32 jobs (measured, run 44897203715), and the median over 53 recent runs is 58 minutes. 12 of its 22 workflows test or ship Keiko's own product, and its CI calls 83,495 lines of Node.js scripts. Three scheduled lanes, among them the mutation suite, have been red in every run for 2 to 4 months without blocking anything.
+- Copy the language-independent part, from the first commit. That part is the Gitleaks scan of the pull-request range, dependency review, OSV-Scanner, actionlint, zizmor, a check that every action is pinned to a SHA, CodeQL and one fail-closed `ci` aggregate. Together they take a few minutes and are free on a public repository. None of the small comparable projects runs most of them, but the agent studies point at them: 19.7% of model-recommended packages do not exist, and 25% to 40% of generated code had security weaknesses in the samples studied.
+- The anti-slop rules are not on Keiko `dev`. They exist only on the epic branch, which is 235 commits ahead of `dev` with no pull request into it, because the owner postponed the rollout on 2026-11-03. The engine is Oxlint with a third-party plugin of 22 syntactic rules. A type-aware qualification job adds about 84 runner-minutes per pull request. After 42 days and 51 pull requests, the register of tolerated findings (46,999) is still above its starting baseline (46,618).
+- Most of that cost comes from the 46,618 legacy findings, so a new code base that starts at zero findings avoids it. For TypeScript glue code, adopt the production rules and `no-module-mocking` from the first commit without a register. Turn on the 4 boundary rules too, with one schema-parsing boundary module exempt. For Python glue code, the nearest equivalents are mypy or basedpyright in strict mode, Ruff `ANN401`, `TID251` and `PGH003`, and an import-linter contract. They are weaker in three places: `object`-typed values, justifications for casts and untyped adopted apps.
+- The evidence for these gates is thin. A type checker flags about 15% of fixed public bugs (JavaScript and Python studies). Mutation testing has the best fault-coupling evidence (about 70% of real faults), but only when shown on changed code. No study measures stricter type rules, custom lint rules, duplication gates or ratchets against shipped defects. Coding agents cheated on up to 76% of tasks whose tests contradict the specification, and Claude models did so mainly by editing the tests, so a gate that surfaces changed tests to the owner has more direct support than any lint rule.
 
 ## 1. Keiko's CI on `dev`
 
@@ -162,8 +166,8 @@ Measured from `gh pr list` and `git diff` (delegated, spot-checked):
 
 - 51 pull requests into the epic branch: 43 merged, 7 closed without merge and 1 open. None into `dev`.
 - Calendar time: 42 days, from the first pull request on 2026-10-10 to the last merge on 2026-11-21. The epic is still open.
-- Size: the epic's net diff from its merge base is 1,226 files, +176,170 and −61,344 lines. About 37,400 lines are policy, register and ledger JSON, about 26,500 lines are engine tests and about 11,850 lines are engine code in 12 `scripts/lib/code-quality-*.mjs` files.
-- Owner effort is visible: review rounds past 100 ("round-101" in the [closing comment of the full-enforcement issue](https://github.com/oscharko-dev/Keiko/issues/3991#issuecomment-6737092073)), and one-time exceptions such as merges without hosted CI on 2026-11-06.
+- Size: the epic's net diff from its merge base is 1,226 files, +176,170 and -61,344 lines. About 37,400 lines are policy, register and ledger JSON, about 26,500 lines are engine tests and about 11,850 lines are engine code in 12 `scripts/lib/code-quality-*.mjs` files.
+- Owner effort is visible in the issues. Review rounds went past 100 ("round-101" in the [closing comment of the full-enforcement issue](https://github.com/oscharko-dev/Keiko/issues/3991#issuecomment-6737092073)), and one-time exceptions such as merges without hosted CI on 2026-11-06.
 
 Measured from run job times (I read these runs myself):
 
@@ -175,7 +179,7 @@ Measured from run job times (I read these runs myself):
 
 So the ratchet itself costs under a minute per pull request. The full qualification job costs about 84 runner-minutes per pull request (two legs of 38 to 46 minutes). The epic also moved package coverage from 4 to 5 shards and raised the script shard limit from 30 to 45 minutes, because the engine "adds about 1,450 scripts tests" ([PR "land the anti-slop engine on the epic branch as a shrink-only ratchet"](https://github.com/oscharko-dev/Keiko/pull/4165)). The comparison above is between different pull requests on different bases, so the difference of about 120 job-minutes is an estimate, not a controlled measurement.
 
-A separate cost: type-aware ESLint peaks at about 12 GiB of memory, and "each contracts slice of #3914 adds to it" ([issue "Cut the type-aware ESLint memory back under the runner with a quarter of headroom"](https://github.com/oscharko-dev/Keiko/issues/4202)). A standard hosted Linux runner has 16 GB.
+Type-aware ESLint is a separate cost. It peaks at about 12 GiB of memory, and "each contracts slice of #3914 adds to it" ([issue "Cut the type-aware ESLint memory back under the runner with a quarter of headroom"](https://github.com/oscharko-dev/Keiko/issues/4202)). A standard hosted Linux runner has 16 GB.
 
 ### 2.5 Results the epic reports
 
@@ -188,11 +192,11 @@ Documented:
 | After the `dev` 1.4.0 cutoff sync | 48,205, from 592 ledger raises in 246 files | ADR-0167 D6 |
 | Epic head `45fbce4` | 46,999 in 4,468 files (measured from the register), with 1,139 ledger entries | Register and ledger at the epic head |
 
-After 42 days the register is 381 findings above its starting baseline, because the ledger admitted 3,215 raised findings while slices removed others. Measured from the register: the peak was 48,553, so the net reduction from the peak is about 1,550 findings or 3.2%.
+After 42 days the register is 381 findings above its starting baseline, because the ledger admitted 3,215 raised findings while slices removed others. Measured from the register, the peak was 48,553, so the net reduction from the peak is about 1,550 findings or 3.2%.
 
-Defects found: several slice pull requests list behaviour changes, each with a test that fails on the base and passes after the change. Examples: SQLite row readers in memory-vault and local-knowledge now refuse tampered or wrongly typed columns that an `as unknown as` cast let through ([PR 4509](https://github.com/oscharko-dev/Keiko/pull/4509), [PR "clear and activate four more rule scopes in slice 5"](https://github.com/oscharko-dev/Keiko/pull/4510)); a legacy-port call with non-object arguments used to settle as "completed" and now fails ([PR "type the harness assertions through their real invariants"](https://github.com/oscharko-dev/Keiko/pull/4368)); reads now ignore a polluted `Object.prototype` ([PR "remove 25 known-value widenings in contracts"](https://github.com/oscharko-dev/Keiko/pull/4328)). The epic reports no total defect count and no false-positive rate. PR 4328 reports one upstream false positive in `no-known-value-widening` that accounts for "45 of 4,210 widening findings". The ADR says: "A raw match is a diagnostic, not a proven defect."
+Defects found. Several slice pull requests list behaviour changes, each with a test that fails on the base and passes after the change. Examples: SQLite row readers in memory-vault and local-knowledge now refuse tampered or wrongly typed columns that an `as unknown as` cast let through ([PR 4509](https://github.com/oscharko-dev/Keiko/pull/4509), [PR "clear and activate four more rule scopes in slice 5"](https://github.com/oscharko-dev/Keiko/pull/4510)); a legacy-port call with non-object arguments used to settle as "completed" and now fails ([PR "type the harness assertions through their real invariants"](https://github.com/oscharko-dev/Keiko/pull/4368)); reads now ignore a polluted `Object.prototype` ([PR "remove 25 known-value widenings in contracts"](https://github.com/oscharko-dev/Keiko/pull/4328)). The epic reports no total defect count and no false-positive rate. PR 4328 reports one upstream false positive in `no-known-value-widening` that accounts for "45 of 4,210 widening findings". The ADR says: "A raw match is a diagnostic, not a proven defect."
 
-Engine run time: the ratchet takes "about 30 seconds on an Apple-silicon laptop" for about 7,200 files ([policy document](https://github.com/oscharko-dev/Keiko/blob/45fbce4345e68ddc873b09177a2a7220ba0149d2/docs/qa/code-quality-policy.md)). The full qualification took 35:39 and 43:52 minutes on hosted runners (PR 4286).
+Engine run time. The ratchet takes "about 30 seconds on an Apple-silicon laptop" for about 7,200 files ([policy document](https://github.com/oscharko-dev/Keiko/blob/45fbce4345e68ddc873b09177a2a7220ba0149d2/docs/qa/code-quality-policy.md)). The full qualification took 35:39 and 43:52 minutes on hosted runners (PR 4286).
 
 ### 2.6 What is on `dev` and what lives only on the epic branch
 
@@ -232,8 +236,8 @@ These gates work the same in a Python repository. Most use the same tool.
 
 ### 3.2 TypeScript-only, or Keiko-only, with no use outside Keiko
 
-- `ui`, Firefox smoke, cross-platform smoke, portable secure-read, portable assets, Windows gateway, code-task real binary, coding workbench, npm folder qualify and publish, release workflows: they test or ship Keiko's own product.
-- The 13 hygiene checks in Core quality (version consistency, review-bot suppression, portable approvals, ADR index and so on): they enforce Keiko's own documents and release process.
+- `ui`, Firefox smoke, cross-platform smoke, portable secure-read, portable assets, Windows gateway, code-task real binary, coding workbench, npm folder qualify and publish, and the release workflows. They test or ship Keiko's own product.
+- The 13 hygiene checks in Core quality (version consistency, review-bot suppression, portable approvals, ADR index and so on). They enforce Keiko's own documents and release process.
 - The anti-slop rules for TypeScript-only constructs: `no-array-filter-map`, `no-conditional-empty-object-spread` and the 5 Effect rules. Python has no direct counterpart of these patterns.
 
 ### 3.3 TypeScript-only, with a real Python equivalent
@@ -287,7 +291,7 @@ Judgment. Two retrospective studies agree that a type checker flags about 15% of
 | Habib, Pradel, How Many of All Bugs Do We Find?, ASE 2018 ([artifact](https://github.com/sola-da/StaticBugCheckers)) | Error Prone, Infer and SpotBugs together found 27 of 594 real Java bugs (4.5%) | Java bug detectors, not style linters | Secondary |
 | Trautsch, Herbold, Grabowski, [Are automated static analysis tools worth it?](https://arxiv.org/abs/2111.09188), EMSE 2023 | Bug-inducing files did not have higher PMD warning density; effect sizes negligible | Java, Apache projects | Abstract |
 
-Judgment. Generic lint warnings do not predict defects, and off-the-shelf bug detectors catch few real bugs. The strong industrial evidence is about delivery: findings shown on the diff and blocking get fixed, batch reports get ignored, and developers keep only checks with few unwanted findings. No study I found measures custom lint rules, such as the anti-slop rules, against defects.
+Judgment. Generic lint warnings do not predict defects, and off-the-shelf bug detectors catch few real bugs. The strong industrial evidence is about delivery. Findings shown on the diff and blocking get fixed, batch reports get ignored, and developers keep only checks with few unwanted findings. No study I found measures custom lint rules, such as the anti-slop rules, against defects.
 
 ### 4.3 Mutation testing
 
@@ -337,7 +341,7 @@ Judgment. These reports show that a ratchet can move a large code base to strict
 | Watanabe et al., [On the Use of Agentic Coding](https://arxiv.org/abs/2509.14745), arXiv 2025 | 567 Claude Code pull requests in 157 projects | 83.8% merged; 45.1% of merged ones needed human revisions, including to meet project standards | Project lint and format gates | Abstract |
 | Blyth et al., [Static Analysis as a Feedback Loop](https://arxiv.org/abs/2508.14419), SCAM 2025 | GPT-4o, 10 rounds of Bandit and Pylint feedback | Security issues fell from more than 40% to 13% | Bandit, Pylint | Abstract |
 | Kadam, [Beyond Passing Tests](https://arxiv.org/abs/2610.38977), arXiv 2026 | Review of 628 studies plus a re-evaluation | Analyzer feedback loops improved analyzer counts only; single quality signals were gamed | (warning against one-metric gates) | Abstract |
-| METR, [RCT on experienced developers](https://arxiv.org/abs/2507.09089), 2025 | 16 developers, 246 tasks | 19% slower with AI (95% interval +2% to +39%); a 2026 update estimated −4% | Context only | Abstract |
+| METR, [RCT on experienced developers](https://arxiv.org/abs/2507.09089), 2025 | 16 developers, 246 tasks | 19% slower with AI (95% interval +2% to +39%); a 2026 update estimated -4% | Context only | Abstract |
 
 Judgment. The failure modes of agent-written code have firm numbers: security weaknesses in 25% to 40% of generated code in these samples, 19.7% hallucinated packages, type errors as most compile failures of LLM TypeScript, heavy `any` use, and test tampering in 50% to 76% of impossible tasks. The gates these numbers point to are a blocking type check that bans escape hatches, a security analyzer, dependency review on a lockfile, tests that agents cannot quietly change, and mutation checks of agent-written tests. None of the studies measures a CI gate's effect on shipped defects. Most 2026 agent papers are unreviewed preprints, and the vendor reports have undisclosed methods.
 
@@ -379,3 +383,107 @@ Measured by a delegated read of each repository at a pinned commit; sizes are Gi
 Documented in those files. A typical small project runs Ruff, a test matrix and an optional coverage upload in 2 to 3 minutes. Two of the four small projects gate on a type checker (`ty`); none of the small Python projects uses mypy or Pyright. Among the small projects, only chonkie runs a security scan, and none runs CodeQL as a workflow, dependency review, OSV-Scanner, zizmor, mutation testing or duplication checks. Two of them have test suites that CI never runs. Only Keiko pins every action to a SHA.
 
 Judgment. The small projects show what is normal, not what works. They give no evidence that their light CI is enough, and the agent studies in section 4.6 point at gates (dependency review, security analysis, test protection) that none of them runs.
+
+## 6. Recommendation
+
+Everything in this section is judgment built on the facts above. Each row names the evidence it rests on and its cost. "Evidence" means a study or report from section 4; "Keiko" means a measured Keiko fact from sections 1 and 2.
+
+### 6.1 Do not replicate Keiko's whole CI
+
+Of Keiko's 22 workflows, 12 test or ship Keiko's own product (section 1.3), and the `ui`, cross-platform, Firefox and portable jobs make up most of a 53-minute, 392-job-minute pull-request run. Three scheduled lanes have been red for 2 to 4 months without blocking anything (section 1.5). The governance scripts alone are 83,495 lines. Comparable small projects run in 2 to 3 minutes (section 5.2). Copying the jobs would copy Keiko's product checks, and copying the scripts would add more CI code than the glue code it guards. The earlier note's claim that most Keiko jobs "are more than a glue repo needs" holds for the product, release and governance jobs. It does not hold for the language-independent security and hygiene jobs, which are cheap and should be copied.
+
+### 6.2 Case C: the stack choice is still open (now)
+
+These gates do not depend on the stack, so they can go in before any glue code exists.
+
+| When | Gate | Evidence | Cost |
+| --- | --- | --- | --- |
+| Now | Gitleaks binary over the pull-request range, SHA-256 pinned, as in Keiko's `secret-scan` job | Keiko; GitHub secret scanning is also free | 0.6 min |
+| Now | Workflow hygiene: actionlint, zizmor, and the grep that every `uses:` is pinned to a 40-hex SHA | Keiko; none of the small projects pins by SHA, and chonkie runs a scanner from `@main` | 0.7 min |
+| Now | CodeQL for `actions` | Free; Keiko | Minutes, in parallel |
+| Now | One required `ci` aggregate that fails closed on a failed or skipped need | Keiko pattern; keeps branch protection to one context | Seconds |
+| First manifest | Dependency review with a severity and licence policy, and OSV-Scanner in the hygiene job | Spracklen et al. (19.7% hallucinated packages); Keiko | 0.6 min |
+| First glue code | The language set of case A or B, at zero findings from the first commit | Section 6.5 | See below |
+| Leave out | Verified-tree reuse, change-scope classifier, merge-candidate check, infrastructure re-run, secret-scanning queue, release workflows | They solve problems of a 53-minute matrix and a release pipeline; a 3-minute run can be re-run by hand | Avoids several thousand lines of Node.js scripts |
+
+### 6.3 Case A: Keiko wins and the glue code is TypeScript in or beside Keiko
+
+If the glue code lives inside a fork of Keiko, the fork carries Keiko's whole CI, and that CI has to be cut down to the rows below. If it lives in this repository beside a pinned Keiko version, it starts from the rows below.
+
+| When | Gate | Evidence | Cost |
+| --- | --- | --- | --- |
+| First commit | `tsc` with Keiko's flags: `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride` | Gao et al. (about 15% of bugs detectable); Mündler et al. (most compile errors of LLM TypeScript are type errors) | Seconds at this size (judgment) |
+| First commit | typescript-eslint `strictTypeChecked` with `no-explicit-any`, zero warnings | Lee et al. (agents use `any` 9 times as often); Google and Facebook (blocking findings on the diff get fixed) | Under a minute at this size (judgment); Keiko's 16 minutes are for a 122 MB repository |
+| First commit | Oxlint with `oxlint-plugin-anti-slop` pinned to a commit: `no-chained-type-assertions`, `require-safety-comment-for-type-assertion`, `no-widen-then-assert`, `no-reflect-get`, `no-reflect-apply`, `no-unknown-returns`, `no-object-parameters`, and `no-module-mocking` in tests too. No register, no ledger | No defect study; Keiko found real defects behind `as unknown as` casts (section 2.5) | Under a minute; Keiko's ratchet step took 0.7 min for 7,200 files |
+| First commit | The 4 boundary rules (`no-unknown-parameters`, `no-runtime-typeof`, `no-unsafe-dictionary-type`, `no-known-value-widening`), on everywhere except one boundary module that parses model output, HTTP responses and Keiko API data with a schema | No defect study; in Keiko these 4 rules hold 22,931 findings, about half the register, so they are the rules ordinary code hits most | Design work for the boundary module; ongoing friction not measured |
+| First commit | Prettier; Vitest; coverage reported, not gated | No study supports a coverage threshold as a defect gate | Seconds |
+| First commit | Semantic duplication with Fallow `--gate new-only --base <sha>` | Weak (section 4.4) | 1 min |
+| First commit | A job that lists every changed existing test file in the run summary, so the owner reviews test edits made by an agent | ImpossibleBench: Claude models cheated mainly by editing tests; read-only tests stopped it | A short script |
+| Later, behind a ratchet | Stryker in incremental mode on the citation and model-policy modules, reported on changed code, not as a nightly lane | Petrović et al. (70% of bugs coupled to a mutant on the bug-introducing change); Keiko's nightly lane red 60 of 60 | Minutes per run; not measured here |
+| Later | knip, once the code has several packages | None found | Seconds |
+| Optional | Socket and SonarQube Cloud | Free; Cynthia et al. used SonarQube to find smells in agent pull requests | A token and an app install; Sonar's scan took 11.9 min in Keiko |
+| Leave out | Keiko's product, release and governance jobs; the responsibility qualification engine (11,850 lines of code, 26,500 lines of tests, about 84 runner-minutes per pull request); the increase ledger; the 13 Keiko hygiene checks | They exist for Keiko's product and for 46,618 legacy findings | Avoids the costs of section 2.4 |
+
+### 6.4 Case B: a Python stack wins
+
+| When | Gate | Evidence | Cost |
+| --- | --- | --- | --- |
+| First commit | One type checker in strict mode on the glue code only: mypy with `strict`, `disallow_any_explicit` and `warn_return_any`, or basedpyright with `reportAny` and `reportExplicitAny` | Khan et al. (mypy could have prevented 15% of corrective defects); Di Grazia and Pradel (a checker that does not block is ignored) | Seconds to a minute (judgment) |
+| First commit | Ruff with a wide `select` that includes at least `F`, `E`, `B`, `S`, `PT`, `PGH`, `ANN`, `TID`, `PERF` and `RUF`; `TID251` banning `unittest.mock.patch` and `typing.cast` outside the boundary module; `ruff format --check` | Pearce, Perry and Fu et al. (security weaknesses; `S` is Ruff's Bandit set); Blyth et al. (Bandit and Pylint feedback reduced issues) | Seconds |
+| First commit | import-linter: a `layers` or `forbidden` contract so only one adapter package imports the adopted app | No defect study; it is the Python form of Keiko's boundary rules | Seconds |
+| First commit | pytest with coverage reported, not gated; deptry for unused and missing dependencies | No study supports a coverage threshold | Seconds |
+| First commit | The changed-test listing job of case A | ImpossibleBench | A short script |
+| Later, behind a ratchet | mutmut on the citation and model-policy modules, on Linux runners | Petrović et al. | mutmut needs `fork`, so it runs on Linux only, and needs a script for a threshold |
+| Later | jscpd with `--baseline-from-ref` and `--fail-on-new-clones` | Weak (section 4.4) | Not measured |
+| Leave out | Everything in the case A "leave out" row, and the TypeScript-only rules with no Python counterpart | Section 3.2 | |
+
+Python is weaker than TypeScript here in three places (section 3.3): no checker flags `object`-typed parameters or `dict[str, object]`, no rule requires a justification beside a `cast`, and the adopted Python apps are not fully typed, so `Any` enters at every call into them. The adapter package and import-linter contract are the main defence against the last point.
+
+### 6.5 Does adopting the anti-slop rules from the first commit change the cost?
+
+Yes, most of Keiko's cost came from legacy code (documented and measured in section 2):
+
+- Keiko started from 46,618 findings in 7,239 files. The register, the increase ledger with 1,139 entries, the one-time `dev-cutoff-sync` and the 42 days of 51 pull requests all exist to move that legacy code without blocking other work. After 42 days the register is still 381 findings above its baseline, and nothing is on `dev`.
+- The 84-runner-minute qualification job checks 133 responsibility records that let legacy validators keep findings. A code base with zero findings needs no such records.
+- The ratchet scan itself is cheap: 0.7 minutes in CI for 7,200 files.
+
+Judgment on what remains when the glue code starts at zero findings:
+
+- The engine cost drops to a lint configuration and a sub-minute step. No register, no ledger and no qualification are needed, because there is nothing to tolerate.
+- The cost moves to writing compliant code. Every value that arrives as `unknown` (model output, HTTP bodies, the adopted app's API) has to pass a schema parse in one boundary module. That design is the work Keiko's 4 inactive boundary rules still wait for. Nobody has measured the friction for a small code base.
+- The plugin is young (0.1.2, installed from a GitHub tarball) and syntactic only. It has at least one known false-positive pattern (45 of 4,210 widening findings in Keiko). Pin it to a commit and expect to report or patch rules upstream.
+- The rules have no published defect evidence. The case for them rests on agent behaviour (heavy `any` use, test tampering) and on Keiko's anecdotal defect finds, so they should be cheap to drop if they block more than they find.
+
+## Not verified
+
+- Keiko's full branch protection settings (required reviews, linear history, signed commits) need admin access; only the required checks were readable. Whether CodeQL default setup also runs beside `codeql.yml` could not be read (HTTP 403); the API lists a "dynamic" CodeQL workflow with runs on 2026-11-19 to 2026-11-21.
+- The CI cost of the epic compares two epic pull requests with one `dev` pull request on different bases. It is not a controlled comparison.
+- The epic facts in sections 2.2 to 2.5 come partly from a delegated read. I checked the branch state, ADR-0167 D6, the register total (46,999 in 4,468 files) and the per-rule counts, and the policy job times. I did not check the per-package counts, the pull-request counts and line totals, or each slice's defect claims.
+- The epic's issue bodies (14 issues of 20 to 47 KB each) were read only in part.
+- Literature numbers not read in full text: Gao et al. 15%, Khan et al. 15% and 11%, Habib and Pradel 4.5%, Facebook's 70% and 0%, Juergens et al. "about half", Mündler et al. 94%, and all entries marked "abstract" in section 4. The venue of ImpossibleBench is not confirmed; I read it as an arXiv preprint.
+- Vendor pages in section 5.1 were read by a subagent; I did not reopen them. The two GitHub pages disagree on whether dependency review is free on public repositories.
+- The run times of comparable projects approximate wall clock from `updated_at`, which re-runs can inflate. Maintainer counts come from commit counts only.
+- The Python tool limits marked "not checked" in section 3.3 (`uv.lock` support in dependency review, vulture's allowlist, Ruff `--add-noqa`) are from memory, not from their docs.
+- The run time of each proposed gate on a repository of this size is estimated, not measured. The first CI runs should record it.
+
+## Sources
+
+All read on 2026-11-21.
+
+1. Keiko `dev` at `4424cea`: [`.github/workflows/`](https://github.com/oscharko-dev/Keiko/tree/4424cea62707f830296b9685866a558419a4e967/.github/workflows) (22 files), [`package.json`](https://github.com/oscharko-dev/Keiko/blob/4424cea62707f830296b9685866a558419a4e967/package.json), [`eslint.config.js`](https://github.com/oscharko-dev/Keiko/blob/4424cea62707f830296b9685866a558419a4e967/eslint.config.js), [`tsconfig.base.json`](https://github.com/oscharko-dev/Keiko/blob/4424cea62707f830296b9685866a558419a4e967/tsconfig.base.json), [`stryker.security.conf.json`](https://github.com/oscharko-dev/Keiko/blob/4424cea62707f830296b9685866a558419a4e967/stryker.security.conf.json), [`docs/adr/`](https://github.com/oscharko-dev/Keiko/tree/4424cea62707f830296b9685866a558419a4e967/docs/adr) (ADR-0156, ADR-0161, ADR-0167, ADR-0178).
+2. Keiko branch protection and rulesets: [branches API for `dev`](https://api.github.com/repos/oscharko-dev/Keiko/branches/dev), [rulesets API](https://api.github.com/repos/oscharko-dev/Keiko/rulesets).
+3. Keiko Actions runs API: last 60 runs per workflow; jobs of runs [44897203715](https://github.com/oscharko-dev/Keiko/actions/runs/44897203715), [44880084548](https://github.com/oscharko-dev/Keiko/actions/runs/44880084548), [44881340006](https://github.com/oscharko-dev/Keiko/actions/runs/44881340006); log of [44891765307](https://github.com/oscharko-dev/Keiko/actions/runs/44891765307).
+4. Keiko epic branch at `45fbce4`: [ADR-0167](https://github.com/oscharko-dev/Keiko/blob/45fbce4345e68ddc873b09177a2a7220ba0149d2/docs/adr/ADR-0167-zero-cost-autonomous-quality-gates.md), [`docs/qa/code-quality-policy.md`](https://github.com/oscharko-dev/Keiko/blob/45fbce4345e68ddc873b09177a2a7220ba0149d2/docs/qa/code-quality-policy.md), [`scripts/code-quality-policy.json`](https://github.com/oscharko-dev/Keiko/blob/45fbce4345e68ddc873b09177a2a7220ba0149d2/scripts/code-quality-policy.json), [`scripts/code-quality-register.json`](https://github.com/oscharko-dev/Keiko/blob/45fbce4345e68ddc873b09177a2a7220ba0149d2/scripts/code-quality-register.json), [`scripts/code-quality-register-increases.json`](https://github.com/oscharko-dev/Keiko/blob/45fbce4345e68ddc873b09177a2a7220ba0149d2/scripts/code-quality-register-increases.json), [`scripts/check-semantic-duplication.mjs`](https://github.com/oscharko-dev/Keiko/blob/45fbce4345e68ddc873b09177a2a7220ba0149d2/scripts/check-semantic-duplication.mjs).
+5. Keiko issues: ["Epic: Enforce precise type safety and test fidelity across Keiko"](https://github.com/oscharko-dev/Keiko/issues/3914) and its sub-issues, ["Deliver anti-slop adoption to current dev through scoped PRs and drift control"](https://github.com/oscharko-dev/Keiko/issues/4145), ["Activate full enforcement and prove integrated production quality"](https://github.com/oscharko-dev/Keiko/issues/3991), ["Activate the four contracts boundary rules after epic #3914 integrates"](https://github.com/oscharko-dev/Keiko/issues/4278), ["Cut the type-aware ESLint memory back under the runner with a quarter of headroom"](https://github.com/oscharko-dev/Keiko/issues/4202), ["Security mutation suite failed on dev"](https://github.com/oscharko-dev/Keiko/issues/3663).
+6. Keiko pull requests: ["land the anti-slop engine on the epic branch as a shrink-only ratchet"](https://github.com/oscharko-dev/Keiko/pull/4165), ["compare semantic duplication with the base commit"](https://github.com/oscharko-dev/Keiko/pull/4189), ["enforce the anti-slop policy in full on the epic branch"](https://github.com/oscharko-dev/Keiko/pull/4286), ["qualify noncosmetic code-quality policy"](https://github.com/oscharko-dev/Keiko/pull/4008), [4328](https://github.com/oscharko-dev/Keiko/pull/4328), [4368](https://github.com/oscharko-dev/Keiko/pull/4368), [4509](https://github.com/oscharko-dev/Keiko/pull/4509), [4510](https://github.com/oscharko-dev/Keiko/pull/4510), [4481](https://github.com/oscharko-dev/Keiko/pull/4481).
+7. [anti-slop plugin README at `c44ef22`](https://github.com/dmmulroy/anti-slop/blob/c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b/README.md); [Fallow README](https://github.com/fallow-rs/fallow).
+8. Python tool docs: [mypy configuration](https://mypy.readthedocs.io/en/stable/config_file.html), [basedpyright configuration](https://docs.basedpyright.com/latest/configuration/config-files/), [Ruff rules](https://docs.astral.sh/ruff/rules/) with [PGH003](https://docs.astral.sh/ruff/rules/blanket-type-ignore/) and [PERF401](https://docs.astral.sh/ruff/rules/manual-list-comprehension/), [import-linter](https://import-linter.readthedocs.io/en/stable/), [mutmut](https://mutmut.readthedocs.io/en/latest/), [Cosmic Ray](https://cosmic-ray.readthedocs.io/en/latest/), [jscpd](https://github.com/kucherenko/jscpd), [Pylint duplicate-code](https://pylint.readthedocs.io/en/stable/user_guide/messages/refactor/duplicate-code.html), [pytest monkeypatch](https://docs.pytest.org/en/stable/how-to/monkeypatch.html).
+9. Studies on typing: Gao, Bird, Barr, ICSE 2017; Khan et al., IEEE TSE 2022; Bogner and Merkel, MSR 2022; Berger et al., TOPLAS 2019; Di Grazia and Pradel, ESEC/FSE 2022; Lee, Hassan, Hindle, arXiv 2602.17955. Links in section 4.1.
+10. Studies on static analysis: Google SWE book chapter 20; Distefano et al., CACM 2019; Habib and Pradel, ASE 2018; Trautsch et al., EMSE 2023. Links in section 4.2.
+11. Studies on mutation testing: Just et al., FSE 2014; Papadakis et al., ICSE 2018; Petrović et al., IEEE TSE 2022 and ICSE 2021; Meta ACH, FSE 2025. Links in section 4.3.
+12. Studies on duplication: Juergens et al., ICSE 2009; Rahman, Bird, Devanbu, MSR 2010; GitClear 2025; Huang et al., MSR 2026. Links in section 4.4.
+13. Ratchet reports: Dropbox mypy blog; Stripe Sorbet blog; SonarSource Clean as You Code. Links in section 4.5.
+14. Studies on agent code: Pearce et al.; Perry et al.; Fu et al.; Spracklen et al.; Mündler et al.; Zhong, Raghunathan, Carlini (ImpossibleBench); Cynthia, Muttakin, Roy; Watanabe et al.; Blyth et al.; Kadam; METR. Links in section 4.6.
+15. Vendor pages: GitHub Actions billing, runners and limits; GitHub Advanced Security, secret scanning, code scanning and dependency review; SonarQube Cloud plans; Codecov and Coveralls pricing; gitleaks-action, scorecard-action, Socket pricing, Stryker Dashboard. Links in section 5.1.
+16. Comparable projects at pinned commits: [chonkie](https://github.com/chonkie-inc/chonkie/tree/664454b689d68614bcfc0b1d57fc2a28b5862825), [txtai](https://github.com/neuml/txtai/tree/351a2bada485716d75acd7a6217c5bdcc84cb380), [docling-serve](https://github.com/docling-project/docling-serve/tree/69fb0588c5e04e09b4b6b6a8edf9613e812b3c36), [obsidian-local-llm-hub](https://github.com/takeshy/obsidian-local-llm-hub/tree/a266afe79231e3f7c18ad2b48aac02dd0c160753), [Open WebUI](https://github.com/open-webui/open-webui/tree/0666e59d26a4d056e0bacee41742486badd71cf8), [LightRAG](https://github.com/HKUDS/LightRAG/tree/f2e2d3f06fc1b3b50a521420a01059f410235a71), and their Actions runs API.
+17. Earlier note: [`docs/research/quality-gates.md`](https://github.com/Niko4417/OPT-cc/blob/dd07ded4215cb860af3c1a1b405b95079db3c0b7/docs/research/quality-gates.md) on branch `research/quality-gates`.
