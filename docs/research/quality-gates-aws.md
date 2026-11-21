@@ -98,3 +98,49 @@ Other limits: a job on a GitHub-hosted runner may run for 6 hours [10]. Standard
 - Read the private snapshot of ADR-0032 or write anything with personal data into logs or artifacts, because both are readable by anyone [12].
 
 **What remains for model-backed checks on pull requests:** none by default. If the owner wants one, the documented safe shape is a `workflow_dispatch` run on `main` or a run after merge, both through the protected environment. Section 5 shows that several real projects do run paid model checks on same-repository pull requests. They accept the branch risk, often with a path filter and a check that the pull request does not come from a fork.
+
+## 2. Running a job on an instance that is usually stopped
+
+The installation from P1 is one EC2 t4g.large with Docker Compose, a 30 GB gp3 volume and no inbound rule. It is reached through Session Manager port forwarding and is normally stopped. It does have a public IPv4 address for outbound traffic while it runs (P1, "Reaching the web app"). The project memories, the LiteLLM database and the scored snapshot of ADR-0032 live on that instance and in its S3 bucket. An evaluation run therefore needs the instance running, the harness started on it, and the instance stopped again.
+
+### 2.1 Prices that every option shares
+
+| Item | Price in eu-central-1 | Source |
+| --- | --- | --- |
+| EC2 t4g.large while running, plus its public IPv4 address | $0.0768 + $0.005 = $0.0818 an hour. Each start bills at least one minute, then per second | P1 [20, 22, 23], [27a] |
+| EventBridge Scheduler | First 14 million invocations a month free, then $1.15 per million | [28] |
+| Systems Manager Automation | $0.002 per step; `aws:executeScript` $0.00003 per second | [27] |
+| Systems Manager Run Command on EC2 | "No additional charges" | [26, 27] |
+| SNS email | First 1,000 email notifications a month free, then $2.00 per 100,000 | [29] |
+| GitHub-hosted standard runner, public repository | Free | [9] |
+
+The Systems Manager Price List file for Frankfurt (published 2026-11-18) has no Automation row [30], so the Automation price comes from the pricing page alone.
+
+### 2.2 Options
+
+**A. EventBridge Scheduler starts a Systems Manager Automation runbook.** A schedule calls `ssm:StartAutomationExecution` through a universal target (`arn:aws:scheduler:::aws-sdk:ssm:startAutomationExecution`) [17]. The runbook records the instance state, starts the instance with `aws:changeInstanceState` (default timeout one hour) [20], runs the harness with `aws:runCommand` [21], and stops the instance again. A step's `onFailure` property can send a failed run to the stop step [22].
+
+**B. A timer inside the instance.** A systemd timer fires only while the instance runs. With `Persistent=true` it fires at the next boot if it missed a run "when the system was powered down" [31]. On an instance that is usually stopped, that means the evaluation would start whenever the consultant starts the instance to work (judgment). A variant lets EventBridge Scheduler call `ec2:startInstances` and lets a boot unit run the harness and shut the instance down. An operating system shutdown stops the instance by default (P1 [23]).
+
+**C. A GitHub Actions workflow on `main` starts the same runbook.** A `schedule`, `push` or `workflow_dispatch` workflow assumes a role through OIDC (section 1.2), calls `StartAutomationExecution`, waits, and reads the scorecard from S3.
+
+**D. A GitHub-hosted runner runs the stack itself.** The workflow starts the app, LiteLLM and PostgreSQL on the runner with Docker Compose, loads or rebuilds the project memory, and calls Bedrock directly with OIDC credentials.
+
+| | A. Scheduler and Automation | B. Timer in the instance | C. GitHub workflow starts the runbook | D. Stack on a GitHub runner |
+| --- | --- | --- | --- | --- |
+| AWS cost of the trigger per run (estimate) | About $0.01: 5 Automation steps at $0.002 [27]; Scheduler free [28] | $0 for the variant with Scheduler starting the instance [28] | As A, about $0.01 | $0 |
+| Compute per run of 1 hour (estimate) | $0.08 on EC2 [27a] | $0.08 | $0.08 on EC2; the runner that waits is free [9] | $0 on the runner [9]. Rebuilding a small project memory adds about $3.60 of Cohere Embed v4 and at least 100 minutes (P1, P2) unless it is restored from S3 |
+| Credentials, and where they live | Only AWS roles: the Scheduler role (start one runbook), the Automation role (start, stop, describe the instance, send one command), the instance role (Bedrock, S3). Nothing outside AWS | Only the instance role, plus `ec2:StartInstances` for Scheduler | As A, plus one role that trusts the `evaluation` environment and may start one runbook and read one S3 prefix. GitHub holds only the role ARN, which is not secret | A role that GitHub can assume with Bedrock invoke rights, `bedrock-mantle:CreateInference` and read access to the snapshot bucket |
+| Result and exit status | Scorecard written to S3 by the harness. The Automation status ("Success", "Failed", "TimedOut") is an EventBridge event [32] that a rule can send to SNS email [29]. Run Command returns at most the first 24,000 characters of stdout [25], so the scorecard must not travel through stdout | The harness must upload to S3 and publish to SNS itself. A hung run is caught only by a timeout set on the unit (judgment) | As A, plus a check run or commit status on the `main` commit, a job summary and a failed workflow, all with `GITHUB_TOKEN` | Job summary and artifacts on GitHub. These are public [12], so only body-free numbers may go there |
+| Fits the CloudFormation template | Yes: `AWS::Scheduler::Schedule` [18], `AWS::SSM::Document` with `DocumentType: Automation` [19], IAM roles, an SNS topic and an EventBridge rule | Yes, but the unit file lives in the instance's user data or image, not as a resource | Yes: as A plus `AWS::IAM::OIDCProvider` and one role. The workflow file lives in this repository | The role only. The stack definition must also run outside AWS |
+| Main weakness | The Run Command execution timeout must be raised for a run of more than an hour (the default of `AWS-RunShellScript` is not verified here). Scheduler delivers "at least once" [16], so the harness must refuse a second run for the same date | Cannot tell a scheduled boot from a consultant's start without extra state | GitHub may delay or drop scheduled runs and disables them after 60 days without activity [1]. Job limit 6 hours [10] | Personal data of the ADR-0032 snapshot would be processed on a runner in a region GitHub does not name [11]. The managed retrieval arm still runs in AWS (ADR-0017). Runner hardware varies, so latency is not comparable across runs |
+
+Notes on the table:
+
+- Automation runs started with a role may run longer than 12 hours. In a user's context the limit is 12 hours [23]. `StartAutomationExecution` allows 1 call per second [23], which does not matter here.
+- `aws:runCommand` delivery waits until `TimeoutSeconds` (30 to 2,592,000) if the agent is not online yet [21, 24]. This covers the minute or so after a start until the SSM Agent registers (judgment; I measured nothing).
+- If the instance was already running when the schedule fired, because a consultant was using it, the runbook should leave it running at the end. Option A can branch on the recorded start state (judgment).
+
+### 2.3 Judgment
+
+Option A fits best for scheduled runs. It keeps every credential in AWS, costs about one cent per run beyond the instance time, survives a repository without activity, and fits the template P1 recommends. Option C is a good second trigger for runs a person wants now, for example after a merge, because it reuses A's runbook and reports the verdict on the commit. Option B alone does not work on a stopped instance. Option D breaks the rule of ADR-0032 that the scored snapshot stays in the installation's AWS account, and it rebuilds or downloads the project memory every time.
