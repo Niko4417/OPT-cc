@@ -10,7 +10,13 @@ The old note ran the model-backed checks nightly on a 64 GB Mac with two local m
 
 ## Short answer
 
-To be filled in when all parts are done.
+- **Where.** On the installation's EC2 instance in Frankfurt, where the project memories and the private snapshot of ADR-0032 already are. A Systems Manager Automation runbook starts the instance, runs the harness through Run Command and stops the instance again. It costs about $0.01 per run plus about $0.08 per hour of instance time [27, 33]. Not on a GitHub-hosted runner: that would move the snapshot's personal data to a runner in a region GitHub does not name [11], and it would rebuild the project memory each time (section 2).
+- **Who starts it.** EventBridge Scheduler starts scheduled runs; its first 14 million invocations a month are free [28], and it keeps every credential in AWS. A GitHub workflow on `main` may start the same runbook through OIDC for runs a person wants now, if the IAM role trusts only a GitHub environment that only `main` may use [4, 6, 13]. GitHub schedules are a poor clock for this, because GitHub may delay or drop them and disables them after 60 days without activity in a public repository [1].
+- **Pull requests.** No model calls. Fork pull requests get no secrets and no OIDC token [1, 2, 3]. Same-repository pull requests do get them, but the pull request's branch then decides what the workflow does, and coding agents push branches here. Every check of the old note's section 4.1 still runs on pull requests without AWS.
+- **When.** There is no consensus. Of 16 real projects with paid model calls in CI, 5 run daily and 4 weekly. Most others run on pull requests with a path filter or only by hand. Only one, Mattermost, repeats each eval nightly (3 runs, majority vote) and compares with the previous night (section 5). Vendors say "every change" [70, 71, 73]. The ten-minute budget comes from XP, Fowler and DORA [66, 68]. Cost decides here: a nightly run of 50 gold questions with 3 repetitions costs about $38 a month, more than the installation itself, against about $5 for a weekly run (estimate, section 4).
+- **Repeatability.** Anthropic documents that Claude Haiku 5.5 and Sonnet 5.5 reject `temperature`, so a request samples at temperature 1.0 [36]. Temperature 0 is "not fully deterministic" on any provider [38]. Published average flip rates of judges on repeated identical calls lie between about 2% and 14%, and reach about 40% on close calls [52, 53, 54]. On Bedrock nobody can serve "one request at a time". What replaces it: measure the judge's flip rate, vote over several calls, record model ID, service tier and `inferenceRegion` per call [43], and prefer an in-Region judge. Batch inference in Frankfurt exists only for Qwen3 235B among the candidates, at half price, with no completion time [55, 56].
+- **One run (estimate).** 50 questions with 3 repetitions cost about $1.26 with Gemma 4 31B answers, a Claude Haiku 5.5 judge and Amazon Rerank, and 100 questions cost about $2.42. The model calls take about 4 to 70 minutes for 50 questions and 9 to 140 minutes for 100, depending on latency and parallel requests. Default quotas do not limit this. The Gemma 4 quota is not published.
+- **Thresholds.** Only the 10-minute budget has a source for its value, and that source is a convention plus a survey [66, 68, 69]. None of the other six numbers has a source. For each of them a method exists that derives the value from measured noise (section 6).
 
 ## 1. GitHub Actions on a public repository that needs AWS credentials
 
@@ -143,7 +149,7 @@ Notes on the table:
 
 ### 2.3 Judgment
 
-Option A fits best for scheduled runs. It keeps every credential in AWS, costs about one cent per run beyond the instance time, survives a repository without activity, and fits the template P1 recommends. Option C is a good second trigger for runs a person wants now, for example after a merge, because it reuses A's runbook and reports the verdict on the commit. Option B alone does not work on a stopped instance. Option D breaks the rule of ADR-0032 that the scored snapshot stays in the installation's AWS account, and it rebuilds or downloads the project memory every time.
+Option A fits best for scheduled runs. It keeps every credential in AWS, costs about one cent per run beyond the instance time, survives a repository without activity, and fits the template P1 recommends. Option C is a good second trigger for runs a person wants now, for example after a merge, because it reuses A's runbook and reports the verdict on the commit. Option B alone does not work on a stopped instance. Option D copies the scored snapshot out of the installation's AWS account, where ADR-0032 stores it because it holds personal data, and it rebuilds or downloads the project memory every time.
 
 ## 3. Repeatability of Bedrock model outputs
 
@@ -318,7 +324,7 @@ The old note cites no source for seven numbers. For each one, the question is wh
 ### 6.2 A drop of at least 5 points and a paired 95% interval below 0
 
 - **Documented method.** Miller's formula for the minimum detectable effect of a paired comparison uses the variance of per-question differences, the within-question variance across repetitions, the repetitions per question K and the number of questions n [80]. His worked example: at n = 198, raising K from 1 to 10 lowers the detectable effect from 13.2 to 7.5 points.
-- **Documented.** Bowyer et al. show that intervals from the central limit theorem are too narrow on small evals; at N = 100 a nominal 95% interval covers "only 92.5%" [81]. They recommend Wilson or Bayesian intervals, and paired methods for comparisons. Card et al. find that "underpowered experiments are common in the NLP literature" [82].
+- **Documented.** Bowyer et al. show that intervals from the central limit theorem are too narrow on small evals; at N = 100 a nominal 95% interval covers "only 92.5%" [81]. They recommend Wilson or Bayesian intervals, and paired methods for comparisons. Card et al. find that "underpowered experiments are common in the NLP literature" [82]. For one binary result per question, Connor's sample-size formula for McNemar's test [83] gives a detectable drop of about 10 points at n = 50 when 10% of questions change their result between runs, and about 17 points when 20% do (estimate).
 - **Precedent for the two-part rule.** Mozilla's Perfherder raises a performance alert only when the change exceeds 2% and a t statistic of 7 at the same time [89]. That is the same shape as "at least 5 points and an interval below 0", with different values.
 - **Estimate, with K = 3 on both runs, two-sided 5% level and 80% power:**
 
@@ -363,3 +369,179 @@ The old note cites no source for seven numbers. For each one, the question is wh
 - **Documented convention.** XP's "Ten-Minute Build", repeated by Fowler [66] and by DORA as "an upper limit of about 10 minutes" [68].
 - **Measured preference.** 10 minutes was the most common answer for the longest acceptable build in a survey of 523 developers [69]. Ghaleb et al. take 10 minutes as the acceptable duration and find many builds far longer [96]. No study I found links the 10 minutes to outcomes such as defects or delivery speed.
 - **Real project.** The pull request evaluation of threat-composer took 550 to 1,066 seconds (section 5.1), so 9 to 18 minutes, above the budget.
+
+## 7. What changes in the old note
+
+All entries in this section are judgment, built on the sections named.
+
+| Old note | Status on AWS | Proposal |
+| --- | --- | --- |
+| Model-backed checks run nightly on the V1 Mac, from a `launchd` job | The Mac is out of V1 (ADR-0013) | A Systems Manager Automation runbook on the installation's instance, started by EventBridge Scheduler and, by hand or after a merge, by a GitHub workflow through OIDC (section 2) |
+| Nightly, 3 repetitions | About $38 a month for 50 questions and $73 for 100 (section 4) | The owner chooses the cadence. Options with precedent: daily (5 projects), weekly (4 projects), or after each change to `main` that touches the app, the prompts or the gold set (section 5) |
+| Judge at temperature 0, one request at a time | Not possible for Claude 5.5 by Anthropic's documentation; not controllable on Bedrock for any model (section 3) | Measure the flip rate per judge and route, vote over calls, record the route per call, prefer an in-Region judge |
+| Run is unmeasured above 5% failed calls | No source; throttling is normal on Bedrock (section 6.1) | Count failures after bounded retries. Derive the tolerance from the alarm floor, and report retries |
+| Alarm at a drop of 5 points with a paired interval below 0 | Method supported, value not (section 6.2) | Run the baseline against itself, compute the detectable effect, and record it next to the floor |
+| Retrieval may lose at most 1 question | Value not supported; embedding API calls may not repeat exactly (section 6.3) | Cache query embeddings and freeze the index, then allow 0 lost questions, or derive the allowance from identical runs |
+| Latency ceiling at 2 times the baseline, on the Mac only | Value not supported (section 6.4) | Baseline per installation, instance type and model route; gate from the measured spread |
+| Self-agreement below 90% on 20 answers gives a majority of 3 | Majority voting supported, the 90% and the 20 are not (section 6.5) | A larger set with at least 5 repetitions, and a vote size from the measured flip rate |
+| About 10 canaries, all correct | Practice supported, rule not (section 6.6) | Choose the count and the allowed misses from the binomial error rates |
+| Per pull request under 10 minutes | Supported as convention (section 6.7) | Keep |
+| Baselines are committed per machine | Holds | Add the Bedrock route, service tier and model lifecycle state to the provenance fields |
+
+Two facts for other tickets:
+
+- [Trial run of the chosen stack from install to export](https://github.com/Niko4417/OPT-cc/issues/12) and [Review and adopt: AWS installation](https://github.com/Niko4417/OPT-cc/issues/47): the CloudFormation template would gain a schedule, an Automation runbook, an SNS topic, an EventBridge rule and, for the GitHub trigger, an OIDC provider and one role (section 2.2). The harness needs a non-interactive run command that refuses a second run for the same date, because Scheduler delivers at least once [16].
+- [Review and adopt: models per task on AWS](https://github.com/Niko4417/OPT-cc/issues/43) and [Review and adopt: LiteLLM routes on AWS](https://github.com/Niko4417/OPT-cc/issues/18): one test call should show whether Bedrock rejects `temperature` for Claude Haiku 5.5 and Sonnet 5.5, as Anthropic's API does [36]. The LiteLLM route must then not send the parameter.
+
+## Not verified
+
+- Whether Bedrock rejects `temperature`, `top_p` and `top_k` for Claude Haiku 5.5 and Sonnet 5.5. Only Anthropic's documentation says so for its own API [36]; AWS's parameter page still lists `temperature` [37].
+- Whether `bedrock-mantle` accepts, ignores or rejects a `seed` parameter. No AWS page I read mentions it.
+- The token burndown rate of Claude Haiku 5.5 and Sonnet 5.5. The burndown page does not name them [65].
+- The default quotas of Gemma 4 on `bedrock-mantle`. AWS does not publish them [47, 64].
+- The latency of Claude Haiku 5.5 and Gemma 4 on Bedrock in Frankfurt. The run times in section 4 rest on an assumed range of 5 to 20 seconds per answer and 2 to 8 seconds per judge call.
+- The time for an instance start, the SSM Agent's registration and the container start.
+- The default and maximum `executionTimeout` of `AWS-RunShellScript`.
+- The exact `sub` claim of this repository. It is derived from GitHub's format rule and the repository IDs; I requested no token.
+- That a fork pull request cannot get an OIDC token. This follows from two documented rules, not from one statement.
+- The region of GitHub-hosted runners. GitHub names only the cloud providers [11].
+- Whether the Automation price of $0.002 per step has a free tier. The pricing page lists none, and the Frankfurt Price List file has no Automation row [27, 30].
+- The Gemma 4 `-batch` SKUs in the Price List, which conflict with the batch documentation that lists no Gemma 4 model [55, 60].
+- The Claude Haiku 5.5 price, which P2 already marked as open.
+- Whether the checks in section 5.1 are required checks in branch protection. Outsiders see only rulesets.
+- Kent Beck's own wording of "Ten-Minute Build", the body of arXiv 2609.33044, and the original texts of Krippendorff and of Landis and Koch.
+- I deployed nothing and ran no model. No command in this note was run against an AWS account.
+
+## Method
+
+I read the GitHub Actions documentation through GitHub's article API, the AWS documentation in its Markdown form, the AWS Price List files for eu-central-1, Anthropic's documentation, the papers and project pages named in the sources, and the workflow files of the projects in section 5.1 through the GitHub API, all on 2026-11-21. Three parts (Bedrock repeatability, real projects and the threshold evidence) were read by helper agents, whose reports I checked by reading the key sources again: the Haiku 5.5 migration guide, the Anthropic glossary, the batch support page, the Price List SKUs for Qwen3 235B and Gemma 4, the titles of the 2026 preprints, and two of the workflow files. Prices and token assumptions come from P1 and P2 and are not checked again. Cost and time figures are estimates from a short script with the inputs stated in section 4.2.
+
+## Sources
+
+All read on 2026-11-21.
+
+GitHub:
+
+1. [Events that trigger workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
+2. [Using secrets in GitHub Actions](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets)
+3. [Workflow syntax for GitHub Actions](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax), sections on `permissions` and forked repositories
+4. [OpenID Connect reference](https://docs.github.com/en/actions/reference/security/oidc), including immutable subject claims
+5. [Configuring OpenID Connect in Amazon Web Services](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws)
+6. [Deployments and environments](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
+7. [Secure use reference](https://docs.github.com/en/actions/reference/security/secure-use)
+8. [Approving workflow runs from forks](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/approve-runs-from-forks)
+9. [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+10. [Actions limits](https://docs.github.com/en/actions/reference/limits)
+11. [GitHub-hosted runners](https://docs.github.com/en/actions/concepts/runners/github-hosted-runners), section "Cloud hosts used by GitHub-hosted runners"
+12. [Downloading workflow artifacts](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts)
+13. [Create a role for OpenID Connect federation](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-idp_oidc.html), section "Configuring a role for GitHub OIDC identity provider", AWS IAM user guide
+14. GitHub Security Lab, [Keeping your GitHub Actions and workflows secure: preventing pwn requests](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/), 2021-08-03
+15. GitHub REST API, [`repos/Niko4417/OPT-cc`](https://api.github.com/repos/Niko4417/OPT-cc): `created_at`, `id`, `owner.id`, visibility
+
+Scheduling on AWS:
+
+16. [What is Amazon EventBridge Scheduler?](https://docs.aws.amazon.com/scheduler/latest/UserGuide/what-is-scheduler.html)
+17. [Using universal targets](https://docs.aws.amazon.com/scheduler/latest/UserGuide/managing-targets-universal.html), EventBridge Scheduler
+18. [`AWS::Scheduler::Schedule`](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-scheduler-schedule.html), CloudFormation template reference
+19. [`AWS::SSM::Document`](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ssm-document.html), CloudFormation template reference
+20. [`aws:changeInstanceState`](https://docs.aws.amazon.com/systems-manager/latest/userguide/automation-action-changestate.html), Systems Manager Automation
+21. [`aws:runCommand`](https://docs.aws.amazon.com/systems-manager/latest/userguide/automation-action-runcommand.html), Systems Manager Automation
+22. [Common properties of Automation actions](https://docs.aws.amazon.com/systems-manager/latest/userguide/automation-actions.html)
+23. [AWS Systems Manager endpoints and quotas](https://docs.aws.amazon.com/general/latest/gr/ssm.html), section "Service quotas for Automation"
+24. [SendCommand](https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_SendCommand.html), Systems Manager API reference
+25. [GetCommandInvocation](https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_GetCommandInvocation.html), Systems Manager API reference
+26. [AWS Systems Manager Run Command](https://docs.aws.amazon.com/systems-manager/latest/userguide/run-command.html)
+27. [AWS Systems Manager pricing](https://aws.amazon.com/systems-manager/pricing/), sections Automation and Run Command
+28. [AWS Price List, AWSEvents, eu-central-1](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSEvents/current/eu-central-1/index.csv), published 2026-11-18, usage type `EUC1-ScheduledInvocation`
+29. [AWS Price List, AmazonSNS, eu-central-1](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonSNS/current/eu-central-1/index.csv), published 2026-11-12, usage type `EUC1-DeliveryAttempts-SMTP`
+30. [AWS Price List, AWSSystemsManager, eu-central-1](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSSystemsManager/current/eu-central-1/index.csv), published 2026-11-18
+31. [systemd.timer](https://www.freedesktop.org/software/systemd/man/latest/systemd.timer.html), option `Persistent=`
+32. [Reference: Amazon EventBridge event patterns and types for Systems Manager](https://docs.aws.amazon.com/systems-manager/latest/userguide/reference-eventbridge-events.html)
+33. [How Amazon EC2 instance stop and start works](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/how-ec2-instance-stop-start-works.html)
+
+Amazon Bedrock and Anthropic:
+
+34. [Influence response generation with inference parameters](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-parameters.html)
+35. [InferenceConfiguration](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_InferenceConfiguration.html), Bedrock runtime API reference
+36. Anthropic: [Claude Haiku 5.5 migration guide](https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide), [Claude Sonnet 5.5 migration guide](https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide) and [API version 2026-10-21 migration](https://platform.claude.com/docs/en/api/migration-2026-10-21)
+37. [Anthropic Claude Messages API request and response](https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages-request-response.html), Bedrock user guide
+38. Anthropic, [Glossary](https://platform.claude.com/docs/en/about-claude/glossary), entry on temperature and non-determinism
+39. [google/gemma-4-31B-it model card](https://huggingface.co/google/gemma-4-31B-it), Hugging Face
+40. Anthropic, [Model IDs and versions](https://platform.claude.com/docs/en/about-claude/models/model-ids-and-versions) and [Models overview](https://platform.claude.com/docs/en/about-claude/models/overview)
+41. [Model lifecycle](https://docs.aws.amazon.com/bedrock/latest/userguide/model-lifecycle.html) and [Model lifecycle for models launched before September 7, 2026](https://docs.aws.amazon.com/bedrock/latest/userguide/model-lifecycle-legacy.html), Bedrock user guide
+42. Anthropic, [A postmortem of three recent issues](https://www.anthropic.com/engineering/a-postmortem-of-three-recent-issues), 2025-09-17
+43. [Cross-Region inference](https://docs.aws.amazon.com/bedrock/latest/userguide/cross-region-inference.html) and [Geographic cross-Region inference](https://docs.aws.amazon.com/bedrock/latest/userguide/geographic-cross-region-inference.html)
+44. [Log Amazon Bedrock API calls using AWS CloudTrail](https://docs.aws.amazon.com/bedrock/latest/userguide/logging-using-cloudtrail.html)
+45. [Monitor model invocation using CloudWatch Logs and Amazon S3](https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html)
+46. [Inference endpoints supported by Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/endpoints.html)
+47. Bedrock model cards for [Claude Haiku 5.5](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-haiku-5-5.html), [Claude Sonnet 5.5](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-5-5.html), [Gemma 4 31B](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-google-gemma-4-31b.html), [Gemma 4 26B-A4B](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-google-gemma-4-26b-a4b.html) and [Qwen3 235B A22B 2507](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-qwen-qwen3-235b-a22b-2507.html)
+
+Measurements of run-to-run variance:
+
+48. Atil et al., [Non-Determinism of "Deterministic" LLM Settings](https://arxiv.org/abs/2408.04667), arXiv 2408.04667 v5
+49. He, [Defeating nondeterminism in LLM inference](https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/), Thinking Machines, 2025-09-10
+50. Yuan et al., [Understanding and mitigating numerical sources of nondeterminism in LLM inference](https://arxiv.org/abs/2506.09501), arXiv 2506.09501 v2
+51. Haldar and Hockenmaier, [Rating Roulette: Self-Inconsistency in LLM-As-A-Judge Frameworks](https://arxiv.org/abs/2510.27106), arXiv 2510.27106, EMNLP 2025 Findings
+52. Yagubyan, [The Coin Flip Judge? Reliability and Bias in LLM-as-a-Judge Evaluation](https://arxiv.org/abs/2606.13685), arXiv 2606.13685
+53. Tamba, [Necessary but Not Sufficient: Temperature Control and Reproducibility in LLM-as-Judge Safety Evaluations](https://arxiv.org/abs/2606.26185), arXiv 2606.26185 v3
+54. Ayyagari, [Pinned and Still Unstable: Within-Judge Verdict Variance and the Noise Floor of LLM-as-Judge Leaderboards](https://arxiv.org/abs/2609.33044), arXiv 2609.33044 v2, abstract only
+
+Batch inference and service tiers:
+
+55. [Supported Regions and models for batch inference](https://docs.aws.amazon.com/bedrock/latest/userguide/batch-inference-supported.html)
+56. [Format and upload your batch inference data](https://docs.aws.amazon.com/bedrock/latest/userguide/batch-inference-data.html) and [CreateModelInvocationJob](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_CreateModelInvocationJob.html)
+57. [Submit a batch of prompts with the OpenAI Batch API](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-openai-batch.html)
+58. [Prompt caching for faster model inference](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html)
+59. [Amazon Bedrock pricing](https://aws.amazon.com/bedrock/pricing/), batch and service tier sections
+60. AWS Price List for eu-central-1: [AmazonBedrock](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonBedrock/current/eu-central-1/index.json), published 2026-11-11, and [AmazonBedrockFoundationModels](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonBedrockFoundationModels/current/eu-central-1/index.json), published 2026-11-20. Usage types `EUC1-Qwen3-235B-A22B-*-batch`, `*-flex` and `EUC1-google.gemma-4-*-mantle-*`
+61. [Service tiers for inference](https://docs.aws.amazon.com/bedrock/latest/userguide/service-tiers-inference.html)
+
+Quotas:
+
+62. [Amazon Bedrock endpoints and quotas](https://docs.aws.amazon.com/general/latest/gr/bedrock.html), AWS General Reference
+63. [Best practices for scaling throughput](https://docs.aws.amazon.com/bedrock/latest/userguide/scaling-throughput-best-practices.html), section "Ramping up throughput"
+64. [Quotas for the bedrock-mantle endpoint](https://docs.aws.amazon.com/bedrock/latest/userguide/quotas-mantle.html)
+65. [How tokens are counted in Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/quotas-token-burndown.html)
+
+Cadence and time budget:
+
+66. Fowler, [Continuous Integration](https://martinfowler.com/articles/continuousIntegration.html), revised 2024-01-18
+67. Winters, Manshreck and Wright (eds.), Software Engineering at Google, [chapter 23, Continuous Integration](https://abseil.io/resources/swe-book/html/ch23.html), and [chapter 11, Testing Overview](https://abseil.io/resources/swe-book/html/ch11.html)
+68. DORA, [Continuous integration](https://dora.dev/capabilities/continuous-integration/) and [Test automation](https://dora.dev/capabilities/test-automation/)
+69. Hilton et al., [Trade-offs in continuous integration: assurance, security, and flexibility](https://dliu04.github.io/epiclab.github.io/publications/esecfse17-hilton.pdf), ESEC/FSE 2017
+70. Anthropic, [Demystifying evals for AI agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents), 2026-01-09
+71. OpenAI, [Evaluation best practices](https://developers.openai.com/api/docs/guides/evaluation-best-practices)
+72. Husain and Shankar, [How are evaluations used differently in CI/CD vs. monitoring production?](https://hamel.dev/blog/posts/evals-faq/how-are-evaluations-used-differently-in-cicd-vs-monitoring-production.html), evals FAQ
+73. Braintrust, [Run evals in CI](https://docs.braintrust.dev/evaluate/run-in-ci)
+74. promptfoo, [CI/CD integration](https://www.promptfoo.dev/docs/integrations/ci-cd/)
+
+Threshold evidence:
+
+75. Inspect AI, [Handling errors](https://inspect.aisi.org.uk/handling-errors.html)
+76. DeepEval, [Flags and configs](https://deepeval.com/docs/evaluation-flags-and-configs)
+77. promptfoo, [Command line](https://promptfoo.dev/docs/usage/command-line)
+78. lm-evaluation-harness, [API guide](https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/API_guide.md) and [`api_models.py`](https://github.com/EleutherAI/lm-evaluation-harness/blob/main/lm_eval/models/api_models.py), branch `main`
+79. MathArena, [retry analysis](https://matharena.ai/retry/), 2026-01-16
+80. Miller, [Adding Error Bars to Evals: A Statistical Approach to Language Model Evaluations](https://arxiv.org/abs/2411.00640), arXiv 2411.00640
+81. Bowyer et al., [Position: Don't use the CLT in LLM evals with fewer than a few hundred datapoints](https://arxiv.org/abs/2503.01747), arXiv 2503.01747, ICML 2025
+82. Card et al., [With little power comes great responsibility](https://aclanthology.org/2020.emnlp-main.745/), EMNLP 2020
+83. SAS/STAT documentation, [power computations for McNemar's test](https://support.sas.com/documentation/cdl/en/statug/66103/HTML/default/statug_power_details55.htm), after Connor (1987)
+84. Lakens, Improving Your Statistical Inferences, [chapter 9, Equivalence testing and interval hypotheses](https://lakens.github.io/statistical_inferences/09-equivalencetest.html)
+85. [On The Reproducibility Limitations of RAG Systems](https://arxiv.org/abs/2509.18869), arXiv 2509.18869 (the ReproRAG framework)
+86. hnswlib [issue 28](https://github.com/nmslib/hnswlib/issues/28) and Apache Lucene [LUCENE-10421](https://issues.apache.org/jira/browse/LUCENE-10421)
+87. Lin and Yang, [Repeatability Corner Cases in Document Ranking: The Impact of Score Ties](https://arxiv.org/abs/1807.05798), arXiv 1807.05798
+88. OpenAI community forum, [Embedding model determinism](https://community.openai.com/t/embedding-model-determinism-big-difference/1207498), 2025-04, a user report
+89. Mozilla Treeherder, [`settings.py`](https://github.com/mozilla/treeherder/blob/master/treeherder/config/settings.py) (`PERFHERDER_REGRESSION_THRESHOLD`) and [`perfalert/__init__.py`](https://github.com/mozilla/treeherder/blob/master/treeherder/perfalert/perfalert/__init__.py), branch `master`
+90. CodSpeed, [customization](https://codspeed.io/docs/features/customization) and [Benchmarks in CI without noise](https://codspeed.io/blog/benchmarks-in-ci-without-noise), 2025-07-30
+91. Bencher, [Thresholds and alerts](https://bencher.dev/docs/explanation/thresholds/)
+92. Daly et al., [Change Point Detection in Software Performance Testing](https://arxiv.org/abs/2003.00584), arXiv 2003.00584, ICPE 2020
+93. Wikipedia, [Krippendorff's alpha](https://en.wikipedia.org/wiki/Krippendorff%27s_alpha) and [Cohen's kappa](https://en.wikipedia.org/wiki/Cohen%27s_kappa), secondary sources for Krippendorff (2004) and Landis and Koch (1977)
+94. Verga et al., [Replacing Judges with Juries: Evaluating LLM Generations with a Panel of Diverse Models](https://arxiv.org/abs/2404.18796), arXiv 2404.18796
+95. Appen, [Guide to test questions in Quality Flow](https://success.appen.com/appen-success-center/settings/guide-to-test-questions-in-quality-flow)
+96. Ghaleb et al., [An empirical study of the long duration of continuous integration builds](https://danielcalencar.github.io/papers/EMSE2019-Taher.pdf), Empirical Software Engineering 2019
+
+Project research:
+
+- P1: [How to build, start and tear down an installation on AWS](https://github.com/Niko4417/OPT-cc/blob/research/aws-installation/docs/research/aws-installation.md), 2026-11-20
+- P2: [The most cost-efficient models per task on AWS](https://github.com/Niko4417/OPT-cc/blob/research/aws-models/docs/research/aws-models.md), 2026-11-19
+- The old note: [Quality gates, CI and evaluation checks for the project memory](https://github.com/Niko4417/OPT-cc/blob/research/quality-gates/docs/research/quality-gates.md), 2026-11-17
