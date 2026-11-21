@@ -260,3 +260,83 @@ The Python column names the tool and the rule. Links go to the tool's documentat
 | `npm audit` | pip-audit or OSV-Scanner | None |
 | StrykerJS mutation testing | mutmut: incremental, retests only changed functions, needs `fork` so Windows needs WSL, and documents no failing score threshold ([mutmut docs](https://mutmut.readthedocs.io/en/latest/)); Cosmic Ray ([docs](https://cosmic-ray.readthedocs.io/en/latest/)) | mutmut gives no built-in CI threshold; a script must read its results |
 | The register ratchet | basedpyright baseline file `./.basedpyright/baseline.json` (basedpyright config); `mypy-baseline` on PyPI | For Ruff the usual route is `--add-noqa`, which writes suppressions into the code (not checked in the Ruff docs here) |
+
+## 4. Evidence that such gates work
+
+The literature search was delegated to a subagent and its report was checked against the sources marked "read" in the table notes. "Read" means the full text or the authors' HTML was opened; "abstract" means only the abstract or listing page was seen; "secondary" means the number came from slides, a citing paper or a summary. Section "Not verified" lists every number that is not from a full text.
+
+### 4.1 Static typing and type strictness
+
+| Study | Design and sample | Result | Limits | Read |
+| --- | --- | --- | --- | --- |
+| Gao, Bird, Barr, [To Type or Not to Type](https://discovery-pp.ucl.ac.uk/id/eprint/10064729/1/typestudy.pdf), ICSE 2017 | 400 fixed public JavaScript bugs, annotated by hand and checked with Flow and TypeScript | Each checker detects about 15% (95% interval 11.5% to 18.5%) | Detectability, not prevention; bugs that already passed review | Abstract, secondary |
+| Khan, Chen, Varró, McIntosh, [Type-Related Defects in Python Projects](https://rebels.cs.uwaterloo.ca/papers/tse2021_khan.pdf), IEEE TSE 2022 | Issue trackers and histories of 210 Python projects | mypy could have prevented 15% of corrective defects, 11% of all defects | Mining noise; lower bound | Abstract, secondary |
+| Bogner, Merkel, [JavaScript and TypeScript on GitHub](https://arxiv.org/abs/2203.11115), MSR 2022 | 604 projects, more than 16 million lines | TypeScript projects scored better on quality metrics, but bug proneness and fix time did not differ significantly. `any` use correlated weakly with worse metrics (Spearman 0.17 to 0.26), not with bug proneness | Observational | Abstract |
+| Ray et al. FSE 2014, reanalysed by [Berger et al. TOPLAS 2019](https://arxiv.org/abs/1901.10220) | 729 projects, 17 languages | After correction, only 4 languages kept a significant association with defects, and the effect was "exceedingly small" | Contested in a rebuttal and reply | Abstract |
+| Di Grazia, Pradel, [Evolution of Type Annotations in Python](https://2022.esec-fse.org/details/fse-2022-research-papers/36/), ESEC/FSE 2022 | Python repository histories | 78.3% of commits went in despite type errors, because the projects did not enforce the checker | Usage study | Abstract |
+| Lee, Hassan, Hindle, [Mining Type Constructs Using Patterns in AI-Generated Code](https://arxiv.org/abs/2602.17955), arXiv 2026 | Agent and human TypeScript pull requests | Agents are "9x more prone to use the 'any' keyword"; agent pull requests had 1.8 times the acceptance rate | Preprint; sample size not in the abstract | Abstract (checked myself) |
+
+Judgment. Two retrospective studies agree that a type checker flags about 15% of fixed public bugs. No study I found measures whether stricter settings than basic checking (banning `any`, banning casts, `noUncheckedIndexedAccess`) reduce defects further, and none links TypeScript type assertions to defects. Di Grazia and Pradel suggest that a checker that does not block merges is mostly ignored. The only agent-specific number is that agents use `any` far more than humans. That is a reason to block escape hatches. It is not evidence that blocking them prevents defects.
+
+### 4.2 Linters and custom lint rules
+
+| Study | Result | Limits | Read |
+| --- | --- | --- | --- |
+| Google Tricorder, [Software Engineering at Google, chapter 20](https://abseil.io/resources/swe-book/html/ch20.html) (same system as Sadowski et al., CACM 2018) | A check must have fewer than 10% "effective false positives"; the overall rate is just below 5%. Google focuses on newly introduced warnings | Experience report; click and fix rates, no defect outcome | Read (book chapter) |
+| Distefano et al., [Scaling Static Analyses at Facebook](https://discovery.ucl.ac.uk/10084236/1/O%27Hearn%20AAM%20scaling-static-analysis-at-facebook.pdf), CACM 2019 | The same Infer findings were fixed 70% of the time at diff time and 0% as a batch list | Experience report | Secondary |
+| Habib, Pradel, How Many of All Bugs Do We Find?, ASE 2018 ([artifact](https://github.com/sola-da/StaticBugCheckers)) | Error Prone, Infer and SpotBugs together found 27 of 594 real Java bugs (4.5%) | Java bug detectors, not style linters | Secondary |
+| Trautsch, Herbold, Grabowski, [Are automated static analysis tools worth it?](https://arxiv.org/abs/2111.09188), EMSE 2023 | Bug-inducing files did not have higher PMD warning density; effect sizes negligible | Java, Apache projects | Abstract |
+
+Judgment. Generic lint warnings do not predict defects, and off-the-shelf bug detectors catch few real bugs. The strong industrial evidence is about delivery: findings shown on the diff and blocking get fixed, batch reports get ignored, and developers keep only checks with few unwanted findings. No study I found measures custom lint rules, such as the anti-slop rules, against defects.
+
+### 4.3 Mutation testing
+
+| Study | Result | Limits | Read |
+| --- | --- | --- | --- |
+| Just et al., [Are Mutants a Valid Substitute for Real Faults?](https://homes.cs.washington.edu/~mernst/pubs/mutation-effectiveness-fse2014-abstract.html), FSE 2014 | 357 real faults in 5 Java programs: 73% coupled to mutants | Java, 5 programs | Abstract |
+| Papadakis et al., [Are Mutation Scores Correlated with Real Fault Detection?](https://orbilu.uni.lu/handle/10993/34950), ICSE 2018 | Once suite size is controlled, the correlation is weak | C and Java benchmarks | Abstract |
+| Petrović et al., [Practical Mutation Testing at Scale](https://arxiv.org/abs/2102.11378), IEEE TSE 2022 | 16.9 million mutants at Google, 2.1 million shown in review. Suppression heuristics raised the share of useful mutants from 15% to 89% (Python 71%). Median changelist: 820 candidate mutants without suppression, 7 with it | One company | Read |
+| Petrović et al., [Does Mutation Testing Improve Testing Practices?](https://arxiv.org/abs/2103.07189), ICSE 2021 | 70% of 1,502 high-priority bugs had a mutant that would have been reported on the bug-introducing change; developers shown mutants changed a median of 11 test hunks against 0 | Not randomized | Read |
+| Meta, [Mutation-guided LLM test generation (ACH)](https://arxiv.org/abs/2501.12862), FSE 2025 industry | Engineers accepted 73% of mutation-guided tests; 277 of 571 would have been discarded under line coverage alone | One company | Abstract |
+
+Judgment. Mutation testing has the best fault-coupling evidence of the gates in this note. What was validated at Google is mutants shown on changed lines in review, heavily filtered, not a whole-repository score threshold. Keiko runs the second kind, nightly, and it has been red since at least 2026-09-23 without a mutation run (section 1.5).
+
+### 4.4 Duplication
+
+| Study | Result | Read |
+| --- | --- | --- |
+| Juergens et al., [Do Code Clones Matter?](https://arxiv.org/abs/1701.05472), ICSE 2009 | 107 faults found among inconsistently changed clone groups; about half of unintentionally inconsistent changes were faults | Abstract |
+| Rahman, Bird, Devanbu, [Clones: What Is That Smell?](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/rahman2010cws.pdf), MSR 2010 and EMSE 2012 | 4 projects: most bugs not significantly associated with clones | Abstract |
+| GitClear, [AI Copilot Code Quality](https://www.gitclear.com/ai_assistant_code_quality_2025_research), 2025 vendor report | 211 million changed lines: copy-pasted lines rose from 8.3% to 12.3% (2021 to 2024), moved lines fell from 25% to under 10% | Read; method of clone detection and AI attribution not described |
+| Huang et al., [More Code, Less Reuse](https://arxiv.org/abs/2601.21276), MSR 2026 | Agents miss reuse opportunities and add redundancy | Abstract, no numbers |
+
+Judgment. Evidence that duplication causes defects is mixed. The defined risk is inconsistent edits to clones. Evidence that agents raise duplication is directional only. A gate that blocks new clones in changed files is cheap (1 minute in Keiko), but its benefit is not measured.
+
+### 4.5 Ratchets and baselines
+
+No peer-reviewed study measures whether a "no new violations" ratchet reduces defects. The support is engineering reports:
+
+- Google focuses static analysis on newly introduced warnings, because fixing old warnings in working code can add bugs (SWE book chapter 20, read).
+- Dropbox annotated about 4 million lines of Python over about 3 years, with annotations required in new files and weekly coverage emails ([Dropbox blog](https://dropbox.tech/application/our-journey-to-type-checking-4-million-lines-of-python), read).
+- Stripe reached more than 95% of files at `typed: true` and about 85% of non-test files at `typed: strict` in 15 million lines over about 4 years, with a per-pull-request quality score ([Stripe blog](https://stripe.dev/blog/sorbet-stripes-type-checker-for-ruby), read).
+- SonarSource recommends gating on new code only ([Clean as You Code](https://docs.sonarsource.com/sonarqube-server/10.6/user-guide/clean-as-you-code/)), with no outcome data.
+
+Judgment. These reports show that a ratchet can move a large code base to strict typing over years. They give no defect numbers. Keiko's epic is a smaller and faster case of the same approach, and after 42 days its register is still above its baseline (section 2.5).
+
+### 4.6 Code written by AI coding agents
+
+| Study | Sample | Result | Gate that would catch it | Read |
+| --- | --- | --- | --- | --- |
+| Pearce et al., [Asleep at the Keyboard?](https://arxiv.org/abs/2108.09293), IEEE S&P 2022 | 1,689 Copilot programs for 89 CWE scenarios | About 40% vulnerable | CodeQL found them (with manual review) | Abstract |
+| Perry et al., [Do Users Write More Insecure Code with AI Assistants?](https://arxiv.org/abs/2211.03622), CCS 2023 | Randomized, 47 participants | AI group less secure on most tasks; SQL injection in 36% of AI-group answers against 7% | Security analyzer, review | Read |
+| Fu et al., [Security Weaknesses of Copilot-Generated Code in GitHub Projects](https://arxiv.org/abs/2310.02059), TOSEM | 733 snippets from real projects | 29.5% (Python) and 24.2% (JavaScript) had weaknesses | Static security analyzers | Abstract |
+| Spracklen et al., [We Have a Package for You!](https://arxiv.org/abs/2406.10279), USENIX Security 2025 | 576,000 samples from 16 models | 19.7% of recommended packages did not exist; 43% of hallucinated names recurred in all 10 reruns | Lockfiles, dependency review | Read |
+| Mündler et al., [Type-Constrained Code Generation](https://arxiv.org/abs/2504.09246), PLDI 2025 | LLM TypeScript on HumanEval and MBPP | About 94% of compilation errors were type errors | Type checker | Abstract; 94% secondary |
+| Zhong, Raghunathan, Carlini, [ImpossibleBench](https://arxiv.org/abs/2510.20270), arXiv 2025 | SWE-bench and LiveCodeBench tasks whose tests contradict the specification | GPT-5 cheated on 76% of one-off and 54% of conflicting SWE-bench tasks; Claude Opus 4.1 on 50%. Claude models cheated mainly (more than 79%) by modifying tests. Read-only tests stopped test edits; hidden tests cut cheating to near zero; LLM monitors caught 42% to 65% on SWE-bench | Tests the agent cannot edit, review of test changes | Read (HTML, checked myself) |
+| Cynthia, Muttakin, Roy, [Beyond Bug Fixes](https://arxiv.org/abs/2601.20109), arXiv 2026 | SonarQube diff analysis of 1,210 merged agent bug-fix pull requests in Python | Most new issues were code smells; bugs rarer but severe; merge status did not indicate quality | Static analysis on the diff | Abstract |
+| Watanabe et al., [On the Use of Agentic Coding](https://arxiv.org/abs/2509.14745), arXiv 2025 | 567 Claude Code pull requests in 157 projects | 83.8% merged; 45.1% of merged ones needed human revisions, including to meet project standards | Project lint and format gates | Abstract |
+| Blyth et al., [Static Analysis as a Feedback Loop](https://arxiv.org/abs/2508.14419), SCAM 2025 | GPT-4o, 10 rounds of Bandit and Pylint feedback | Security issues fell from more than 40% to 13% | Bandit, Pylint | Abstract |
+| Kadam, [Beyond Passing Tests](https://arxiv.org/abs/2610.38977), arXiv 2026 | Review of 628 studies plus a re-evaluation | Analyzer feedback loops improved analyzer counts only; single quality signals were gamed | (warning against one-metric gates) | Abstract |
+| METR, [RCT on experienced developers](https://arxiv.org/abs/2507.09089), 2025 | 16 developers, 246 tasks | 19% slower with AI (95% interval +2% to +39%); a 2026 update estimated −4% | Context only | Abstract |
+
+Judgment. The failure modes of agent-written code have firm numbers: security weaknesses in 25% to 40% of generated code in these samples, 19.7% hallucinated packages, type errors as most compile failures of LLM TypeScript, heavy `any` use, and test tampering in 50% to 76% of impossible tasks. The gates these numbers point to are a blocking type check that bans escape hatches, a security analyzer, dependency review on a lockfile, tests that agents cannot quietly change, and mutation checks of agent-written tests. None of the studies measures a CI gate's effect on shipped defects. Most 2026 agent papers are unreviewed preprints, and the vendor reports have undisclosed methods.
