@@ -206,3 +206,57 @@ Engine run time: the ratchet takes "about 30 seconds on an Apple-silicon laptop"
 | `strictTypeChecked`, `no-explicit-any`, strict `tsconfig` | Present, from before the epic | Present |
 
 So none of the anti-slop rules runs on `dev` today.
+
+## 3. What depends on TypeScript and what does not
+
+### 3.1 Independent of language
+
+These gates work the same in a Python repository. Most use the same tool.
+
+| Gate | Keiko implementation | Same in Python |
+| --- | --- | --- |
+| Secret scan over the pull-request range | Gitleaks binary, SHA-256 pinned | Same tool |
+| Dependency review | `dependency-review-action` with severity and licence policy | Same action; the dependency graph reads `requirements.txt`, `pyproject.toml` and `uv.lock`-style manifests (not checked for `uv.lock` here) |
+| OSV-Scanner | `osv-scanner-action` in workflow hygiene and nightly | Same action; OSV covers PyPI |
+| Workflow hygiene | actionlint, zizmor, a grep that every `uses:` is pinned to a 40-hex SHA | Same tools |
+| CodeQL | `actions` and `javascript-typescript` | CodeQL supports `python` and `actions` |
+| SonarQube Cloud | Scanner CLI with a quality-gate wait | Sonar supports Python |
+| Socket | GitHub app | Socket supports PyPI (vendor page, not checked in depth) |
+| Infrastructure re-run once | `check-infra-failure-signature.mjs` | Method carries over; the script is Node.js |
+| Verified-tree reuse, merge-candidate check, fail-closed `ci` aggregate | Scripts and shell | Methods carry over; scripts are Node.js |
+| Coverage as a measurement with per-file floors | Vitest V8 coverage and `check-package-coverage.mjs` | coverage.py with `fail_under`, or per-file checks in a script |
+| Mutation testing as a method | StrykerJS | mutmut or Cosmic Ray (section 3.3) |
+| Duplication detection as a method | Fallow, JavaScript/TypeScript only | jscpd or Pylint `duplicate-code` (section 3.3) |
+| SBOM and provenance attestation | `npm sbom`, `actions/attest` | CycloneDX for Python, same attest action |
+| Grounding and retrieval gates | Keiko scripts over Keiko packages | Method only, as the earlier note found |
+
+### 3.2 TypeScript-only, or Keiko-only, with no use outside Keiko
+
+- `ui`, Firefox smoke, cross-platform smoke, portable secure-read, portable assets, Windows gateway, code-task real binary, coding workbench, npm folder qualify and publish, release workflows: they test or ship Keiko's own product.
+- The 13 hygiene checks in Core quality (version consistency, review-bot suppression, portable approvals, ADR index and so on): they enforce Keiko's own documents and release process.
+- The anti-slop rules for TypeScript-only constructs: `no-array-filter-map`, `no-conditional-empty-object-spread` and the 5 Effect rules. Python has no direct counterpart of these patterns.
+
+### 3.3 TypeScript-only, with a real Python equivalent
+
+The Python column names the tool and the rule. Links go to the tool's documentation. "Weaker" is my judgment unless a source is named.
+
+| Keiko gate or rule | Python equivalent | Where the Python version is weaker |
+| --- | --- | --- |
+| `tsc` with `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` | mypy with `strict = true` ([mypy config](https://mypy.readthedocs.io/en/stable/config_file.html)), or Pyright/basedpyright with `typeCheckingMode = "strict"` or `"all"` ([basedpyright config](https://docs.basedpyright.com/latest/configuration/config-files/)) | Python types are not checked at run time, and the adopted apps (Open WebUI, LightRAG) are not fully typed, so `Any` leaks in through every call into them. I found no mypy flag equal to `exactOptionalPropertyTypes` |
+| typescript-eslint `strictTypeChecked` | Ruff ([rules](https://docs.astral.sh/ruff/rules/)) for syntactic rules plus the type checker for type rules | Ruff rules are syntactic; type-aware lint rules such as unhandled promises have no Ruff counterpart. Pylint has some inference but is slow |
+| `no-explicit-any` | Ruff `ANN401` ([any-type](https://docs.astral.sh/ruff/rules/any-type/)), mypy `disallow_any_explicit`, basedpyright `reportExplicitAny` | `ANN401` covers function annotations only; the mypy and basedpyright options cover all annotations |
+| `no-unknown-returns`, `no-unknown-parameters`, `no-unsafe-dictionary-type`, `no-known-value-widening` | mypy `warn_return_any`, `disallow_any_expr`, `disallow_any_generics`; basedpyright `reportAny` and the `reportUnknown*` family | These catch `Any`, not `object`. Python has no separate `unknown` type, so `object` plays its role and no checker flags `dict[str, object]` |
+| `no-object-parameters` | None found | No rule flags parameters typed `object` |
+| `no-chained-type-assertions`, `no-widen-then-assert` | mypy `warn_redundant_casts`, basedpyright `reportUnnecessaryCast`; Ruff `TID251` ([banned-api](https://docs.astral.sh/ruff/rules/banned-api/)) can ban `typing.cast` outright | Only redundant casts are found. `cast(T, cast(object, x))` is not flagged unless `cast` is banned everywhere |
+| `require-safety-comment-for-type-assertion` | For suppressions: Ruff `PGH003` ([blanket-type-ignore](https://docs.astral.sh/ruff/rules/blanket-type-ignore/)), mypy `warn_unused_ignores`, basedpyright `reportIgnoreCommentWithoutRule` and `reportUnnecessaryTypeIgnoreComment` | No tool requires a justification comment beside a `cast` |
+| `no-reflect-get`, `no-reflect-apply` | Ruff `B009` and `B010` ([get-attr-with-constant](https://docs.astral.sh/ruff/rules/get-attr-with-constant/)) | They flag `getattr` with a constant name only, not dynamic `getattr` |
+| `no-runtime-typeof` | None; parse at the boundary with a schema library instead | `isinstance` is idiomatic Python, so a ban would fight the language (judgment) |
+| `no-accumulating-spread`, `no-reduce-accumulator-copy` | Ruff `PERF401` ([manual-list-comprehension](https://docs.astral.sh/ruff/rules/manual-list-comprehension/)) | Covers list appends only; no rule for `acc = {**acc, k: v}` in a loop |
+| `no-module-mocking` (test seams) | Ruff `TID251` banning `unittest.mock.patch` and `mock.patch.object`; pytest `monkeypatch` documented as the fixture alternative ([pytest monkeypatch](https://docs.pytest.org/en/stable/how-to/monkeypatch.html)) | `monkeypatch.setattr` still patches modules and is a fixture, so `TID251` cannot ban it |
+| Architecture boundaries (`arch:check`, dependency-cruiser) | import-linter contracts: forbidden, layers, independence, protected, acyclic siblings ([import-linter](https://import-linter.readthedocs.io/en/stable/)) | Comparable for import rules |
+| knip (unused files, exports, dependencies) | vulture for dead code, deptry for unused and missing dependencies | vulture reports likely dead code with confidence levels and needs an allowlist (judgment, not checked in its docs) |
+| Fallow semantic duplication | jscpd: 224 formats, `--threshold`, and `--baseline-from-ref` with `--fail-on-new-clones` ([jscpd](https://github.com/kucherenko/jscpd)); Pylint `duplicate-code` R0801 ([message](https://pylint.readthedocs.io/en/stable/user_guide/messages/refactor/duplicate-code.html)) | I did not compare detection quality |
+| Prettier | `ruff format` | None |
+| `npm audit` | pip-audit or OSV-Scanner | None |
+| StrykerJS mutation testing | mutmut: incremental, retests only changed functions, needs `fork` so Windows needs WSL, and documents no failing score threshold ([mutmut docs](https://mutmut.readthedocs.io/en/latest/)); Cosmic Ray ([docs](https://cosmic-ray.readthedocs.io/en/latest/)) | mutmut gives no built-in CI threshold; a script must read its results |
+| The register ratchet | basedpyright baseline file `./.basedpyright/baseline.json` (basedpyright config); `mypy-baseline` on PyPI | For Ruff the usual route is `--add-noqa`, which writes suppressions into the code (not checked in the Ruff docs here) |
